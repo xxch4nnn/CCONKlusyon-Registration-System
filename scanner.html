@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>CCOnklusyon Usher Scanner</title>
+<!--
+  CCOnklusyon Registration & Check-in System — Usher Scanner PWA (D-2)
+  Epic 3 / Stories 3.1-3.4 (see AGENTS.md / Sprint Backlog doc for the full spec)
+
+  Single-file HTML/JS/CSS, zero build step, per the Zero-Build Mandate. Deploy as-is via
+  GitHub Pages. Wires to the live Code.gs API contract:
+    POST {action:"checkin", attendance_code, device_id} -> SUCCESS | DUPLICATE | NOT_FOUND
+    POST {action:"sync", items:[...]}                    -> bulk offline-queue flush
+  html5-qrcode loaded from jsdelivr per Story 3.1.1 (spec explicitly calls for "via CDN").
+
+  Before using: set CONFIG.API_BASE below to the live /exec URL (same one Code.gs was
+  contract-tested against). Uses the browser's own fetch() redirect handling, which already
+  does what the manual curl workaround used during Epic 1 testing did (follow the /exec ->
+  googleusercontent redirect automatically) — no special redirect code needed here.
+-->
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<style>
+  :root {
+    --gold: #B8860B; --gold-tint: #FFFDF0;
+    --blue: #1A56DB; --blue-tint: #F0F5FF;
+    --green: #16A34A; --amber: #D97706; --red: #DC2626;
+    --bg: #0B0E14; --panel: #151A24; --text: #F3F4F6; --muted: #9CA3AF;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    display: flex; flex-direction: column; min-height: 100vh;
+  }
+  header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; background: var(--panel); border-bottom: 1px solid #232938;
+    font-size: 13px; color: var(--muted);
+  }
+  header b { color: var(--text); }
+  #offlineBanner {
+    background: var(--amber); color: #1A1200; font-weight: 700; text-align: center;
+    padding: 8px 10px; font-size: 14px; letter-spacing: 0.3px;
+  }
+  #reader { width: 100%; max-width: 480px; margin: 12px auto 0; border-radius: 12px; overflow: hidden; }
+  #reader video { border-radius: 12px; }
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 14px 14px; }
+  .controls { display: flex; gap: 10px; width: 100%; max-width: 480px; margin-top: 14px; }
+  button {
+    font: inherit; font-weight: 700; border: none; border-radius: 10px; padding: 14px 16px;
+    font-size: 15px; cursor: pointer; color: #fff; flex: 1;
+  }
+  #torchBtn { background: #374151; }
+  #manualBtn { background: #374151; }
+  #manualPanel {
+    width: 100%; max-width: 480px; margin-top: 14px; background: var(--panel);
+    border-radius: 12px; padding: 16px; display: flex; gap: 10px;
+  }
+  #manualCode {
+    flex: 1; font-size: 20px; letter-spacing: 3px; padding: 12px; border-radius: 8px;
+    border: 1px solid #374151; background: #0B0E14; color: var(--text); text-align: center;
+  }
+  #manualSubmit { background: var(--blue); flex: 0 0 auto; }
+  #queueNote { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  /* Full-screen state flash (Story 3.2.2) — soft radial pulse, not a hard strobe */
+  #flash {
+    position: fixed; inset: 0; opacity: 0; pointer-events: none; z-index: 30;
+    transition: opacity 420ms cubic-bezier(.22,.61,.36,1);
+  }
+  #flash.show { opacity: 0.55; transition-duration: 160ms; }
+  #flash.green { background: radial-gradient(circle at 50% 40%, var(--green), transparent 72%); }
+  #flash.amber { background: radial-gradient(circle at 50% 40%, var(--amber), transparent 72%); }
+  #flash.red   { background: radial-gradient(circle at 50% 40%, var(--red), transparent 72%); }
+
+  /* Result modal (Story 3.3.2 / feedback layer) */
+  #resultModal {
+    position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.55); padding: 20px;
+  }
+  #resultModal[hidden] { display: none; }
+  .card {
+    width: 100%; max-width: 420px; background: #fff; color: #111827; border-radius: 16px;
+    overflow: hidden; text-align: center; animation: cardIn 220ms cubic-bezier(.22,.61,.36,1);
+  }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
+  .card.duplicate { animation: cardIn 220ms cubic-bezier(.22,.61,.36,1), dupPulse 900ms ease-in-out 1; border: 3px solid var(--amber); }
+  @keyframes dupPulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(217,119,6,0.0); }
+    30% { box-shadow: 0 0 0 10px rgba(217,119,6,0.35); }
+    60% { box-shadow: 0 0 0 0 rgba(217,119,6,0.0); }
+  }
+  .card .tier-bar { padding: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
+    font-size: 13px; color: #fff; }
+  .card .tier-bar.duplicate-bar { background: var(--amber) !important; }
+  .card .body { padding: 22px 20px 26px; }
+  .card .warn-icon { font-size: 30px; line-height: 1; margin-bottom: 4px; }
+  .card .name { font-size: 22px; font-weight: 800; margin: 0 0 4px; }
+  .card .sub { font-size: 14px; color: #4B5563; margin: 0 0 14px; }
+  .card .seat { display: inline-block; padding: 6px 16px; border-radius: 20px; background: #F3F4F6;
+    font-size: 13px; font-weight: 700; color: #111827; }
+  .card .msg { font-size: 16px; font-weight: 800; margin: 0 0 6px; }
+  .card .first-seen { display: inline-block; margin-top: 12px; padding: 6px 14px; border-radius: 20px;
+    background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; }
+  .card.error .body { padding-top: 26px; }
+  .card button.close { margin: 0; width: calc(100% - 40px); margin: 0 20px 20px; background: #111827; }
+  [hidden] { display: none !important; }
+</style>
+</head>
+<body>
+  <div id="offlineBanner" hidden>OFFLINE MODE — scans are queued locally and will sync automatically</div>
+  <header>
+    <span>Station: <b id="stationLabel">—</b></span>
+    <span id="queueBadge">Queue: 0</span>
+  </header>
+
+  <div id="flash"></div>
+
+  <main>
+    <div id="reader"></div>
+    <div class="controls">
+      <button id="torchBtn" hidden>🔦 Flashlight</button>
+      <button id="manualBtn">⌨️ Enter Code Manually</button>
+    </div>
+    <div id="manualPanel" hidden>
+      <input id="manualCode" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="5-digit code">
+      <button id="manualSubmit">Validate</button>
+    </div>
+    <div id="queueNote" hidden></div>
+  </main>
+
+  <div id="resultModal" hidden></div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- CONFIG -----------------------------------------------------------------------
+  const CONFIG = {
+    // Live Code.gs /exec URL (Epic 1, contract-tested). Update if the deployment changes.
+    API_BASE: 'https://script.google.com/macros/s/AKfycbwspVxuQu0vJcih48ggE_npLpUBPZE1Y4QucTxl5-Qgmn2M9JcZWVbJ-yKmmzOhAAkq/exec',
+    SCAN_FREEZE_MS: 2000,       // Story 3.1.3
+    AUTO_SYNC_INTERVAL_MS: 15000,
+    TIER_COLORS: {
+      'VIP Pass': '#B8860B',
+      'Regular Attendee': '#1A56DB'
+    },
+    DEVICE_ID_KEY: 'cco_device_id',
+    OFFLINE_QUEUE_KEY: 'cco_offline_scans'
+  };
+
+  // ---- Device / station id -----------------------------------------------------------
+  function getDeviceId() {
+    let id = localStorage.getItem(CONFIG.DEVICE_ID_KEY);
+    if (!id) {
+      id = (prompt('Usher station / device name (e.g. "Entrance-1"):') || '').trim() || 'Unassigned-Station';
+      localStorage.setItem(CONFIG.DEVICE_ID_KEY, id);
+    }
+    return id;
+  }
+  const deviceId = getDeviceId();
+  document.getElementById('stationLabel').textContent = deviceId;
+
+  // ---- Offline queue (Story 3.4) ------------------------------------------------------
+  function readQueue() {
+    try { return JSON.parse(localStorage.getItem(CONFIG.OFFLINE_QUEUE_KEY) || '[]'); }
+    catch (e) { return []; }
+  }
+  function writeQueue(q) {
+    localStorage.setItem(CONFIG.OFFLINE_QUEUE_KEY, JSON.stringify(q));
+    updateQueueUi();
+  }
+  function queueOffline(item) {
+    const q = readQueue();
+    q.push(item);
+    writeQueue(q);
+  }
+  function updateQueueUi() {
+    const n = readQueue().length;
+    document.getElementById('queueBadge').textContent = 'Queue: ' + n;
+    const banner = document.getElementById('offlineBanner');
+    banner.hidden = n === 0 && navigator.onLine;
+  }
+
+  async function trySyncOfflineQueue() {
+    const q = readQueue();
+    if (q.length === 0 || !navigator.onLine) return;
+    try {
+      const res = await fetch(CONFIG.API_BASE, {
+        method: 'POST',
+        body: JSON.stringify({ action: 'sync', items: q })
+      });
+      const json = await res.json();
+      if (json && json.status === 'SUCCESS') {
+        writeQueue([]); // whole batch flushed — Code.gs handleSync_ processes every item
+      }
+    } catch (err) {
+      // still offline or endpoint unreachable — leave queue intact, retry later
+    }
+  }
+  window.addEventListener('online', trySyncOfflineQueue);
+  window.addEventListener('online', updateQueueUi);
+  window.addEventListener('offline', updateQueueUi);
+  setInterval(trySyncOfflineQueue, CONFIG.AUTO_SYNC_INTERVAL_MS);
+
+  // ---- Feedback layer: audio tones (Story 3.2.1) --------------------------------------
+  let audioCtx = null;
+  function ensureAudioCtx() {
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (Ctx) audioCtx = new Ctx();
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  function tone(freqStart, freqEnd, durationMs) {
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(freqStart, ctx.currentTime);
+    if (freqEnd !== freqStart) {
+      osc.frequency.linearRampToValueAtTime(freqEnd, ctx.currentTime + durationMs / 1000);
+    }
+    gain.gain.setValueAtTime(0.25, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationMs / 1000);
+    osc.connect(gain).connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + durationMs / 1000);
+  }
+  function playFeedbackTone(kind) {
+    if (kind === 'success') tone(800, 1200, 180);        // rising sweep
+    else if (kind === 'duplicate') tone(440, 440, 220);  // flat mid tone
+    else tone(200, 200, 320);                             // low buzz — error/not-found
+  }
+
+  // ---- Feedback layer: full-screen flash (Story 3.2.2) --------------------------------
+  function flashScreen(color) {
+    const el = document.getElementById('flash');
+    el.className = color; // set color first so the transition has a starting point
+    // next frame: fade in fast (160ms), hold briefly, then the 420ms fade-out transition
+    // handles the rest — one smooth in-hold-out pulse instead of an abrupt on/off strobe.
+    requestAnimationFrame(function () {
+      el.classList.add('show');
+      setTimeout(function () { el.classList.remove('show'); }, 200);
+    });
+  }
+
+  // ---- Result modal (tier-colored, Story 3.3.2) ---------------------------------------
+  function closeModal() { document.getElementById('resultModal').hidden = true; }
+
+  function showResultModal(status, data, message) {
+    const modal = document.getElementById('resultModal');
+    let html;
+
+    if (status === 'SUCCESS') {
+      const tier = data.ticket_type || 'Regular Attendee';
+      const color = CONFIG.TIER_COLORS[tier] || CONFIG.TIER_COLORS['Regular Attendee'];
+      html =
+        '<div class="card"><div class="tier-bar" style="background:' + color + '">' + escapeHtml_(tier) + '</div>' +
+        '<div class="body">' +
+        '<p class="msg" style="color:' + color + '">CHECKED IN</p>' +
+        '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
+        '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
+        (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
+        '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
+    } else if (status === 'DUPLICATE') {
+      // Deliberately distinct from SUCCESS regardless of tier color — an amber bar, warning
+      // icon, and a one-shot pulse ring, so a duplicate reads unmistakably differently from a
+      // fresh check-in at a glance (the earlier plain color-swap was too subtle per usher testing).
+      html =
+        '<div class="card duplicate"><div class="tier-bar duplicate-bar">DUPLICATE SCAN</div>' +
+        '<div class="body">' +
+        '<div class="warn-icon">⚠️</div>' +
+        '<p class="msg" style="color:var(--amber)">ALREADY CHECKED IN</p>' +
+        '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
+        '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
+        (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
+        (data.initial_checkin_timestamp ? '<div><span class="first-seen">First checked in: ' + escapeHtml_(data.initial_checkin_timestamp) + '</span></div>' : '') +
+        '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
+    } else {
+      html =
+        '<div class="card error"><div class="body">' +
+        '<p class="msg" style="color:#DC2626;">' + (status === 'NOT_FOUND' ? 'CODE NOT FOUND' : 'ERROR') + '</p>' +
+        '<p class="sub">' + escapeHtml_(message || 'Check the code, or use the printed roster.') + '</p>' +
+        '</div><button class="close" onclick="cco_closeModal()">Try again</button></div>';
+    }
+
+    modal.innerHTML = html;
+    modal.hidden = false;
+  }
+  window.cco_closeModal = closeModal;
+
+  function escapeHtml_(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // ---- Core check-in call (shared by camera scan + manual PIN, Story 3.1.2 / 3.3) -----
+  async function submitCheckin(code) {
+    const payload = { action: 'checkin', attendance_code: code, device_id: deviceId };
+    let json;
+    try {
+      const res = await fetch(CONFIG.API_BASE, { method: 'POST', body: JSON.stringify(payload) });
+      json = await res.json();
+    } catch (err) {
+      // Network failure -> offline resilience (Story 3.4.1): queue and tell the usher
+      // check-in will be confirmed once the connection returns, instead of blocking entry.
+      queueOffline(payload);
+      flashScreen('amber');
+      playFeedbackTone('duplicate'); // neutral tone — not a hard error, not a confirmed success
+      showResultModal('QUEUED', {}, 'No connection — scan saved and will sync automatically. Let the attendee through and verify later if needed.');
+      return;
+    }
+
+    if (json.status === 'SUCCESS') {
+      flashScreen('green');
+      playFeedbackTone('success');
+      showResultModal('SUCCESS', json.data, json.message);
+    } else if (json.status === 'DUPLICATE') {
+      flashScreen('amber');
+      playFeedbackTone('duplicate');
+      showResultModal('DUPLICATE', json.data, json.message);
+    } else if (json.status === 'NOT_FOUND') {
+      flashScreen('red');
+      playFeedbackTone('error');
+      showResultModal('NOT_FOUND', {}, json.message);
+    } else {
+      flashScreen('red');
+      playFeedbackTone('error');
+      showResultModal('ERROR', {}, json.message || 'Unexpected response.');
+    }
+  }
+
+  // ---- Manual PIN fallback (Story 3.3) -------------------------------------------------
+  const manualBtn = document.getElementById('manualBtn');
+  const manualPanel = document.getElementById('manualPanel');
+  const manualCode = document.getElementById('manualCode');
+  manualBtn.addEventListener('click', function () {
+    manualPanel.hidden = !manualPanel.hidden;
+    if (!manualPanel.hidden) manualCode.focus();
+  });
+  document.getElementById('manualSubmit').addEventListener('click', function () {
+    const code = manualCode.value.trim();
+    if (!code) return;
+    ensureAudioCtx();
+    submitCheckin(code);
+    manualCode.value = '';
+  });
+  manualCode.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') document.getElementById('manualSubmit').click();
+  });
+
+  // ---- Camera scan core (Story 3.1) ----------------------------------------------------
+  let scanLocked = false;
+  const html5QrCode = new Html5Qrcode('reader');
+
+  function onScanSuccess(decodedText) {
+    if (scanLocked) return; // 2.0s scan-freeze debounce (Story 3.1.3)
+    scanLocked = true;
+    ensureAudioCtx();
+    submitCheckin(decodedText.trim());
+    setTimeout(function () { scanLocked = false; }, CONFIG.SCAN_FREEZE_MS);
+  }
+
+  html5QrCode.start(
+    { facingMode: 'environment' },
+    { fps: 10, qrbox: { width: 250, height: 250 } },
+    onScanSuccess,
+    function () { /* per-frame decode miss — expected constantly, ignore */ }
+  ).then(function () {
+    setupTorch();
+  }).catch(function (err) {
+    showResultModal('ERROR', {}, 'Camera unavailable (' + err + '). Use manual code entry instead.');
+    manualPanel.hidden = false;
+  });
+
+  // ---- Flashlight toggle, feature-detected (Story 3.1.4) -------------------------------
+  function setupTorch() {
+    const torchBtn = document.getElementById('torchBtn');
+    let torchOn = false;
+    try {
+      const caps = html5QrCode.getRunningTrackCameraCapabilities();
+      const torchFeature = caps && caps.torchFeature && caps.torchFeature();
+      if (torchFeature && torchFeature.isSupported && torchFeature.isSupported()) {
+        torchBtn.hidden = false;
+        torchBtn.addEventListener('click', function () {
+          torchOn = !torchOn;
+          torchFeature.apply(torchOn);
+          torchBtn.style.background = torchOn ? '#F59E0B' : '#374151';
+        });
+      }
+    } catch (e) {
+      // torch not supported on this device/browser — button stays hidden, no functional loss
+    }
+  }
+
+  // ---- Init -----------------------------------------------------------------------------
+  updateQueueUi();
+  trySyncOfflineQueue();
+})();
+</script>
+</body>
+</html>

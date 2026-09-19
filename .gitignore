@@ -1,0 +1,11 @@
+# Local / editor
+.claude/
+.clasp.json
+.clasprc.json
+*.log
+.DS_Store
+Thumbs.db
+
+# Secrets: never commit (bot tokens live in Apps Script ScriptProperties)
+.env
+*.key
