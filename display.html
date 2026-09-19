@@ -144,7 +144,7 @@
       <div id="grid"></div>
       <div id="empty">
         <h2 class="pulse">Welcome to CCOnklusyon 2026</h2>
-        <p class="pulse">Arrivals will appear here as delegates check in</p>
+        <p class="pulse" id="emptyMsg">Loading arrivals…</p>
       </div>
       <div class="fade-bottom" id="fade" hidden></div>
     </div>
@@ -164,6 +164,8 @@
     RECENT_LIMIT: 16,          // spec: limit=16 on each poll
     INITIAL_LIMIT: 300,        // first load only: pull everyone already checked in
     ROSTER_REFRESH_MS: 20000,  // total/checked-in counter (uses GET ?action=roster, no email)
+    RECONCILE_MS: 60000,       // every minute, re-read the full list and treat it as the truth (drops reset rows)
+    SNAPSHOT_KEY: 'cco_wall_snapshot_v1', // this tab's memory of the wall, so a refresh isn't blank
     FETCH_TIMEOUT_MS: 9000,
     MAX_BACKOFF_MS: 12000,
     HERO_COUNT: 3,
@@ -183,7 +185,11 @@
   let totalRoster = 0;
 
   // ---- Small helpers -------------------------------------------------------------------
-  function keyOf(a) { return (a.full_name || '') + '|' + (a.checkin_timestamp || ''); }
+  // Identity = person, not arrival time. The old key (name + timestamp) produced a second card whenever the same
+  // person checked in again after a reset, or the sheet wrote the same instant in another format (+08:00 vs Z).
+  // The recent feed carries no attendance_code, so name + organisation is the best available identity.
+  function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase(); }
+  function keyOf(a) { return norm(a.full_name) + '|' + norm(a.club_name); }
   function tsOf(a) { const t = Date.parse(a.checkin_timestamp); return isNaN(t) ? 0 : t; }
   function tierOf(a) { return TIER[a.ticket_type] || TIER['Regular Attendee']; }
   function safeUrl(u) { return /^https?:\/\//i.test(String(u || '')) ? String(u) : ''; }
@@ -300,6 +306,8 @@
     const any = sorted.length > 0;
     $('heroSection').hidden = !any;
     $('empty').hidden = any;
+    // Before the first answer arrives an empty wall means "loading", not "nobody has checked in".
+    $('emptyMsg').textContent = firstLoadDone ? 'Arrivals will appear here as delegates check in' : 'Loading arrivals…';
     $('gridLabel').hidden = rest.length === 0;
     updateCount();
     // A resize/insert can change whether the grid overflows.
@@ -308,7 +316,7 @@
 
   function updateCount() {
     // Prefer the sheet's own numbers (roster) when we have them; fall back to what this wall has seen.
-    const shown = Math.max(store.size, checkedInFromRoster);
+    const shown = rosterLoaded ? checkedInFromRoster : store.size; // the sheet is the authority once we've read it
     $('countNum').textContent = shown;
     $('countLabel').textContent = totalRoster ? 'of ' + totalRoster + ' checked in' : 'Checked in';
   }
@@ -327,15 +335,31 @@
     }
   }
 
-  function ingest(list, animate) {
+  // `snapshot` = this list is the complete set of checked-in people (not just the newest few), so anyone we
+  // hold who isn't in it has been reset in the sheet and must leave the wall.
+  function ingest(list, animate, snapshot) {
     let changed = false;
+    const seen = new Set();
     list.forEach(function (a) {
       if (!a || !a.full_name) return;
       const key = keyOf(a);
-      if (store.has(key)) return;
-      store.set(key, Object.assign({}, a, { key: key, ts: tsOf(a), fresh: animate }));
-      changed = true;
+      seen.add(key);
+      const ts = tsOf(a);
+      const cur = store.get(key);
+      if (!cur) {
+        store.set(key, Object.assign({}, a, { key: key, ts: ts, fresh: animate }));
+        changed = true;
+      } else if (ts > cur.ts) { // checked in again later: replace, and bring the card back in as the newest
+        store.set(key, Object.assign({}, a, { key: key, ts: ts, fresh: animate }));
+        heroEls.delete(key); tileEls.delete(key);
+        changed = true;
+      }
     });
+    if (snapshot && list.length < CONFIG.INITIAL_LIMIT) { // a full list — a truncated one can't prove anyone is gone
+      Array.from(store.keys()).forEach(function (k) {
+        if (!seen.has(k)) { store.delete(k); heroEls.delete(k); tileEls.delete(k); changed = true; }
+      });
+    }
     // Keep memory bounded on a very long run: drop the oldest beyond the visible window.
     const cap = CONFIG.MAX_TILES + CONFIG.HERO_COUNT;
     if (store.size > cap) {
@@ -343,19 +367,42 @@
         .forEach(function (a) { store.delete(a.key); });
       changed = true;
     }
-    if (changed) render();
+    if (changed) { render(); saveSnapshot(); }
   }
 
-  let firstLoadDone = false, fails = 0;
+  // ---- This tab's memory of the wall (survives F5; cleared when the tab closes) -----------------------------
+  function saveSnapshot() {
+    try {
+      sessionStorage.setItem(CONFIG.SNAPSHOT_KEY, JSON.stringify(Array.from(store.values()).map(function (a) {
+        const c = Object.assign({}, a); delete c.key; delete c.ts; delete c.fresh; return c;
+      })));
+    } catch (e) { /* storage blocked/full — the wall still works, just blank for a moment after a refresh */ }
+  }
+  function loadSnapshot() {
+    try {
+      (JSON.parse(sessionStorage.getItem(CONFIG.SNAPSHOT_KEY) || '[]') || []).forEach(function (a) {
+        if (!a || !a.full_name) return;
+        const k = keyOf(a);
+        store.set(k, Object.assign({}, a, { key: k, ts: tsOf(a), fresh: false }));
+      });
+    } catch (e) { /* corrupt snapshot — ignore, the first poll rebuilds everything */ }
+  }
+
+  let firstLoadDone = false, fails = 0, lastFullAt = 0;
   function setLive(ok) {
     $('live').classList.toggle('down', !ok);
     $('liveText').textContent = ok ? 'Live' : 'Reconnecting…';
   }
   async function poll() {
     try {
-      const json = await getJson('?action=recent&limit=' + (firstLoadDone ? CONFIG.RECENT_LIMIT : CONFIG.INITIAL_LIMIT));
-      ingest(json.attendees, firstLoadDone); // first load fills the wall silently; later arrivals animate in
+      // First load and then once a minute: ask for everyone (authoritative). In between: just the newest few.
+      const full = !firstLoadDone || Date.now() - lastFullAt >= CONFIG.RECONCILE_MS;
+      const json = await getJson('?action=recent&limit=' + (full ? CONFIG.INITIAL_LIMIT : CONFIG.RECENT_LIMIT));
+      ingest(json.attendees, firstLoadDone, full); // first load fills the wall silently; later arrivals animate in
+      if (full) lastFullAt = Date.now();
+      const wasFirst = !firstLoadDone;
       firstLoadDone = true; fails = 0; setLive(true);
+      if (wasFirst) render(); // refresh the "loading" text even if nothing changed
     } catch (err) {
       fails++; setLive(false); // keep showing the last good data
     } finally {
@@ -364,12 +411,13 @@
     }
   }
 
-  let checkedInFromRoster = 0;
+  let checkedInFromRoster = 0, rosterLoaded = false;
   async function pollRoster() {
     try {
       const json = await getJson('?action=roster');
       totalRoster = json.attendees.length;
       checkedInFromRoster = json.attendees.filter(function (a) { return a.checkin_status === 'Checked-In'; }).length;
+      rosterLoaded = true;
       updateCount();
     } catch (err) { /* counter simply keeps its last value */ }
     setTimeout(pollRoster, CONFIG.ROSTER_REFRESH_MS);
@@ -404,6 +452,7 @@
   wake();
 
   // ---- Init -----------------------------------------------------------------------------
+  loadSnapshot(); // a refresh shows the last known wall immediately instead of a blank screen
   render();
   poll();
   pollRoster();

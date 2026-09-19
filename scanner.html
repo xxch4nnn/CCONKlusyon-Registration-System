@@ -83,7 +83,11 @@
   /* html5-qrcode injects fixed-pixel <video>/<canvas> plus its own shaded overlay. Force the video to
      fill the viewport (cover), hide the library chrome — we draw our own reticle below. */
   #reader > div, #reader__scan_region { width: 100% !important; height: 100% !important; min-height: 0 !important; }
-  #reader video { width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
+  /* The video is sized in JS (fitCamera) to the stream's own aspect ratio, scaled to cover the viewport and centred.
+     html5-qrcode maps its scan box using the video element's layout size, so the element must NOT be stretched or
+     cropped with object-fit — that mis-maps the box and lets codes outside the on-screen frame scan (BUG-008). */
+  #reader { overflow: hidden; }
+  #reader video { position: absolute; max-width: none !important; display: block; }
   #reader canvas, #reader #qr-shaded-region, #reader img { display: none !important; }
 
   #readerPaused {
@@ -93,7 +97,7 @@
   }
   #readerPaused .big { font-size: 40px; }
 
-  .reticle { position: absolute; left: 50%; top: 50%; width: min(68vw, 46dvh, 320px); aspect-ratio: 1;
+  .reticle { position: absolute; left: 50%; top: 50%; width: var(--reticle, min(68vw, 46dvh, 320px)); aspect-ratio: 1;
     transform: translate(-50%, -50%); pointer-events: none; }
   .reticle .mask { position: absolute; inset: 0; border-radius: 18px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.42); }
   .reticle i { position: absolute; width: 30px; height: 30px; border: 4px solid rgba(255,255,255,.92);
@@ -218,6 +222,22 @@
   .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
   .sheet-actions .btn { padding: 12px 8px; font-size: 13px; background: var(--panel-2); }
   .sheet-actions .wide { grid-column: 1 / -1; }
+  #busy { bottom: 54px; display: flex; align-items: center; gap: 8px; background: rgba(21,26,36,.94); border: 1px solid var(--line); }
+  .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #4B5563; border-top-color: #4ADE80; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .card .passcode { margin: -2px 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: #6B7280; }
+
+  /* ---- Station name gate: mandatory, cannot be dismissed on first run ---- */
+  #stationGate { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 20px;
+    background: rgba(7,10,18,.94); backdrop-filter: blur(6px); }
+  .gate-card { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 24px 20px; text-align: center; }
+  .gate-card .gate-icon { font-size: 34px; }
+  .gate-card h2 { margin: 6px 0 8px; font-size: 20px; }
+  .gate-card p { margin: 0 0 16px; font-size: 13px; color: var(--muted); line-height: 1.5; }
+  #stationInput { width: 100%; font-size: 20px; padding: 14px; border-radius: 12px; border: 1px solid #374151; background: var(--bg); color: var(--text); text-align: center; }
+  #stationInput:focus { outline: 2px solid var(--blue); border-color: transparent; }
+  .gate-err { margin: 10px 0 0; font-size: 12px; color: #FCA5A5; }
+  .gate-card .btn { width: 100%; margin-top: 14px; }
   .tiny { color: var(--muted); font-size: 11px; margin-top: 10px; word-break: break-all; }
   #diagLog { max-height: 34dvh; overflow: auto; margin: 8px 0; padding: 8px; border-radius: 8px; background: var(--bg);
     color: #C7CEDA; font: 10.5px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
@@ -247,6 +267,7 @@
     <div id="hint" class="viewport-chip">Point the camera at the QR code</div>
     <div id="unlockHint" class="viewport-chip">👆 Tap once to enable sound &amp; vibration</div>
     <div id="toast" class="viewport-chip" role="status"></div>
+    <div id="busy" class="viewport-chip" role="status" hidden><span class="spin"></span><span id="busyText"></span></div>
     <button id="torchBtn" aria-label="Flashlight" hidden>🔦</button>
   </section>
 
@@ -269,6 +290,18 @@
 
 <div id="flash"></div>
 <div id="resultModal" hidden></div>
+
+<div id="stationGate" role="dialog" aria-modal="true" aria-labelledby="stationTitle" hidden>
+  <form class="gate-card" id="stationForm" autocomplete="off" novalidate>
+    <div class="gate-icon">📍</div>
+    <h2 id="stationTitle">Name this station</h2>
+    <p>Every check-in is logged against this name (for example <b>Entrance-1</b> or <b>Usher-Ana</b>). It is required before scanning.</p>
+    <input id="stationInput" type="text" maxlength="24" placeholder="Station name" autocapitalize="words" enterkeyhint="go" spellcheck="false">
+    <div id="stationErr" class="gate-err" role="alert" hidden></div>
+    <button type="submit" id="stationSubmit" class="btn primary">Start scanning</button>
+    <button type="button" id="stationCancel" class="btn secondary" hidden>Cancel</button>
+  </form>
+</div>
 
 <div id="settingsBackdrop" hidden></div>
 <div id="settingsSheet" role="dialog" aria-label="Scanner settings" hidden>
@@ -346,7 +379,7 @@
     SETTINGS_KEY: 'cco_scanner_settings',
     DIAG_KEY: 'cco_diag',
     DIAG_MAX: 40,                // entries kept in the connection log
-    REQUEST_TIMEOUT_MS: 12000,   // Apps Script is normally 1-2 s, occasionally 4+; 12 s = clearly stuck
+    REQUEST_TIMEOUT_MS: 8000,    // Apps Script is normally 1-3 s, occasionally 4+; 8 s = clearly stuck (worst case POST+GET = 16 s)
     SYNC_FALLBACK_MAX: 25        // per-item GET fallback cap per sync run
   };
 
@@ -377,17 +410,64 @@
     setTimeout(function () { el.classList.remove('bump'); }, 320);
   }
 
-  // ---- Device / station id -----------------------------------------------------------
-  function askStationName() {
-    const id = (prompt('Usher station / device name (e.g. "Entrance-1"):') || '').trim() || 'Unassigned-Station';
-    localStorage.setItem(CONFIG.DEVICE_ID_KEY, id);
-    return id;
+  // ---- Station name (mandatory) ----------------------------------------------------------------
+  // The old flow used window.prompt(): browsers can silently suppress it, a Cancel saved "Unassigned-Station" forever
+  // (so it never asked again), and nothing stopped scanning without a name (BUG-007). Now an in-page gate blocks the
+  // camera, scanning and manual entry until a real name is entered; a legacy "Unassigned-Station" counts as unset.
+  const STATION_RE = /^[A-Za-z0-9][A-Za-z0-9 _.\-]{1,23}$/; // 2-24 chars
+  const STATION_RESERVED = /^(unassigned-station|unassigned|unknown|station|none|null|undefined|n\/a|na)$/i;
+  function validStation(v) {
+    const n = String(v == null ? '' : v).trim().replace(/\s+/g, ' ');
+    return STATION_RE.test(n) && !STATION_RESERVED.test(n) ? n : null;
   }
-  function getDeviceId() {
-    return localStorage.getItem(CONFIG.DEVICE_ID_KEY) || askStationName();
+  function storedStation() {
+    try { return validStation(localStorage.getItem(CONFIG.DEVICE_ID_KEY)); } catch (e) { return null; }
   }
-  let deviceId = getDeviceId();
-  $('stationLabel').textContent = deviceId;
+  let deviceId = storedStation(); // null until a valid name exists
+  function showStation() { $('stationLabel').textContent = deviceId || 'Set station'; }
+  showStation();
+
+  let gatePromise = null, gateResolve = null, gateCancellable = false;
+  function closeGate(value) {
+    $('stationGate').hidden = true;
+    const r = gateResolve; gateResolve = null; gatePromise = null;
+    if (r) r(value);
+  }
+  // Resolves with the station name once one is set. `force` re-opens it to change the name (Cancel allowed then).
+  function requireStation(opts) {
+    opts = opts || {};
+    if (deviceId && !opts.force) return Promise.resolve(deviceId);
+    if (gatePromise) return gatePromise;
+    gatePromise = new Promise(function (resolve) { gateResolve = resolve; });
+    gateCancellable = !!(opts.force && deviceId);
+    $('stationInput').value = gateCancellable ? deviceId : '';
+    $('stationErr').hidden = true;
+    $('stationCancel').hidden = !gateCancellable;
+    $('stationGate').hidden = false;
+    setTimeout(function () { try { $('stationInput').focus(); $('stationInput').select(); } catch (e) { /* ignore */ } }, 60);
+    return gatePromise;
+  }
+  $('stationForm').addEventListener('submit', function (e) {
+    e.preventDefault();
+    const raw = $('stationInput').value;
+    const name = validStation(raw);
+    if (!name) {
+      const reserved = STATION_RESERVED.test(String(raw).trim());
+      $('stationErr').textContent = reserved
+        ? 'Pick a real name for this station (for example Entrance-1).'
+        : 'Use 2–24 letters, numbers, spaces, dashes, dots or underscores (for example Entrance-1).';
+      $('stationErr').hidden = false;
+      return;
+    }
+    try { localStorage.setItem(CONFIG.DEVICE_ID_KEY, name); } catch (err) { /* storage blocked: kept in memory for this session */ }
+    deviceId = name;
+    showStation();
+    closeGate(name);
+  });
+  $('stationCancel').addEventListener('click', function () { if (gateCancellable) closeGate(deviceId); });
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && !$('stationGate').hidden) { e.preventDefault(); if (gateCancellable) closeGate(deviceId); }
+  });
 
   // ---- API layer: the one place that talks to Apps Script -------------------------------------
   // Every call gets a timeout and a line in the connection log (Settings -> Connection log), so a
@@ -727,6 +807,8 @@
     let html;
     let autoMs = 0;
     const isVip = data && data.ticket_type === 'VIP Pass';
+    const passCode = data && (data._code || data.attendance_code);
+    const codeLine = passCode ? '<p class="passcode">PASS ' + escapeHtml_(passCode) + '</p>' : '';
     const bar = function (ms) { return '<div class="dismiss-bar" style="animation-duration:' + ms + 'ms"></div>'; };
 
     if (status === 'SUCCESS') {
@@ -740,6 +822,7 @@
         (isVip ? '<div class="vip-star">⭐</div>' : '') +
         '<p class="msg" style="color:' + color + '">CHECKED IN</p>' +
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
+        codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
         (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
@@ -753,6 +836,7 @@
         '<div class="warn-icon">⚠️</div>' +
         '<p class="msg" style="color:var(--amber)">ALREADY CHECKED IN</p>' +
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
+        codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
         (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
         (data.initial_checkin_timestamp ? '<div><span class="first-seen">First checked in at ' + escapeHtml_(fmtTime(data.initial_checkin_timestamp)) + '</span></div>' : '') +
@@ -770,12 +854,15 @@
         (autoMs ? bar(autoMs) : '') +
         '<div class="body">' +
         (isVip && !suspectDup ? '<div class="vip-star">⭐</div>' : '') +
-        '<p class="msg" style="color:' + (suspectDup ? 'var(--amber)' : color) + '">' + (suspectDup ? 'MAY ALREADY BE CHECKED IN' : 'OFFLINE — QUEUED') + '</p>' +
+        '<p class="msg" style="color:' + (suspectDup ? 'var(--amber)' : color) + '">' + (suspectDup ? (data._reason === 'server' ? 'NOT CONFIRMED — ROSTER SAYS CHECKED IN' : 'MAY ALREADY BE CHECKED IN') : 'OFFLINE — QUEUED') + '</p>' +
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
+        codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
         (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
         '<span class="offline-note">' + (suspectDup
-          ? 'Per the last roster sync this code was already checked in — verify with the printed roster before letting them through again.'
+          ? (data._reason === 'server'
+            ? 'The server didn’t confirm this scan (it’s saved and will sync). The roster on this phone says this pass was already checked in, but that copy may be out of date — tap ⚙️ → Refresh roster, or check the printed roster.'
+            : 'Per the last roster sync this code was already checked in — verify with the printed roster before letting them through again.')
           : (data._reason === 'server'
             ? 'The server didn’t confirm this check-in. It’s saved on this device and will sync automatically — identity is from the last cached roster sync.'
             : 'No connection — identity is from the last cached roster sync. Check-in will be recorded once back online.')) + '</span>' +
@@ -784,12 +871,14 @@
       html =
         '<div class="card"><div class="body">' +
         '<p class="msg" style="color:var(--amber);">' + (message ? 'NOT CONFIRMED — CODE NOT IN CACHE' : 'OFFLINE — CODE NOT IN CACHE') + '</p>' +
+        codeLine +
         '<p class="sub">' + escapeHtml_(message || 'No connection and this code isn’t in the cached roster, so this attendee can’t be identified right now — including whether they’re VIP. Check the printed roster before letting them through.') + '</p>' +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else {
       html =
         '<div class="card error"><div class="body">' +
         '<p class="msg" style="color:#DC2626;">' + (status === 'NOT_FOUND' ? 'CODE NOT FOUND' : 'ERROR') + '</p>' +
+        codeLine +
         '<p class="sub">' + escapeHtml_(message || 'Check the code, or use the printed roster.') + '</p>' +
         '</div><button class="close" onclick="cco_closeModal()">Try again</button></div>';
     }
@@ -822,7 +911,20 @@
   // Flow: POST -> (if the reply isn't a definitive answer) one silent retry via GET -> (if still no
   // definitive answer) save to the offline queue. The raw server text ("Unknown action." etc.) is never
   // shown to an usher. A retry is safe: the server's duplicate check is atomic under the script lock.
+  function setBusy(text) {
+    const el = $('busy');
+    if (!text) { el.hidden = true; return; }
+    $('busyText').textContent = text;
+    el.hidden = false;
+  }
+  // Shows "Checking <code>…" from the moment a scan is accepted until its card appears, so a slow answer is never a
+  // mystery card that seems to belong to nothing (BUG-009).
   async function submitCheckin(code) {
+    if (!deviceId) { requireStation(); return; } // never check anyone in without a station name
+    setBusy('Checking ' + code + '…');
+    try { await runCheckin(code); } finally { setBusy(null); }
+  }
+  async function runCheckin(code) {
     const payload = { action: 'checkin', attendance_code: code, device_id: deviceId };
     const startedAt = Date.now();
     let r = await callApi('checkin POST', CONFIG.API_BASE, { method: 'POST', body: JSON.stringify(payload) });
@@ -845,7 +947,7 @@
     if (ambiguous && json.status === 'DUPLICATE' && isOwnEarlierWrite(json.data, startedAt)) {
       json = asRecoveredSuccess(code, json.data);
     }
-    renderCheckinResult(json);
+    renderCheckinResult(json, code);
   }
 
   function isOwnEarlierWrite(data, startedAt) {
@@ -881,35 +983,35 @@
       reactReticle(suspectDup ? 'dup' : (vip ? 'vip' : 'ok'));
       feedback(suspectDup ? 'duplicate' : (vip ? 'vip' : 'success'));
       if (!suspectDup) countScan();
-      showResultModal('QUEUED_OFFLINE', Object.assign({}, cached, { _reason: reason }), null);
+      showResultModal('QUEUED_OFFLINE', Object.assign({}, cached, { _reason: reason, _code: code }), null);
     } else {
       flashScreen('amber');
       reactReticle('dup');
       feedback('duplicate'); // neutral tone — not a hard error, not a confirmed success
-      showResultModal('QUEUED', {}, reason === 'server'
+      showResultModal('QUEUED', { _code: code }, reason === 'server'
         ? 'The server didn’t confirm this check-in, and this code isn’t in the cached roster, so this attendee can’t be identified right now — including whether they’re VIP. The scan is saved and will sync; scan again in a moment or check the printed roster.'
         : null);
     }
   }
 
-  function renderCheckinResult(json) {
+  function renderCheckinResult(json, code) {
     if (json.status === 'SUCCESS') {
       const vip = json.data && json.data.ticket_type === 'VIP Pass';
       flashScreen(vip ? 'gold' : 'green');
       reactReticle(vip ? 'vip' : 'ok');
       feedback(vip ? 'vip' : 'success');
       countScan();
-      showResultModal('SUCCESS', json.data, json.message);
+      showResultModal('SUCCESS', Object.assign({}, json.data, { _code: code }), json.message);
     } else if (json.status === 'DUPLICATE') {
       flashScreen('amber');
       reactReticle('dup');
       feedback('duplicate');
-      showResultModal('DUPLICATE', json.data, json.message);
+      showResultModal('DUPLICATE', Object.assign({}, json.data, { _code: code }), json.message);
     } else {
       flashScreen('red');
       reactReticle('err');
       feedback('error');
-      showResultModal('NOT_FOUND', {}, json.message);
+      showResultModal('NOT_FOUND', { _code: code }, json.message);
     }
   }
 
@@ -971,6 +1073,7 @@
   }
   // Camera callback: stability gate, then validation, then the guarded check-in path below.
   function onDecode(decodedText) {
+    if (!deviceId) return; // no station name yet (the gate is open)
     const text = String(decodedText == null ? '' : decodedText).trim();
     const now = Date.now();
     if (cand.text === text && now - cand.t <= CONFIG.STABLE_WINDOW_MS) cand.n++;
@@ -991,6 +1094,7 @@
   let inFlight = false;
   const recentCodes = new Map(); // code -> ms timestamp of the last accepted scan
   function onScanSuccess(decodedText) {
+    if (!deviceId) return; // no station name yet (the gate is open)
     if (scanLocked) return; // 2.0s scan-freeze debounce (Story 3.1.3)
     if (inFlight && !continuousScan) return;
     const code = String(decodedText || '').trim();
@@ -1023,16 +1127,60 @@
     cameraToggleBtn.textContent = on ? '📷 Camera off' : '📷 Camera on';
   }
 
+  // ---- Camera geometry (BUG-008): scan ONLY inside the on-screen frame --------------------------------
+  // html5-qrcode crops each frame to its "qrbox" using the video element's *layout* size, so the element must have the
+  // stream's own aspect ratio. We size it ourselves to cover the viewport (like object-fit: cover, but with real
+  // dimensions), centred, and give the library a qrbox equal to the frame drawn on screen. Frame size lives in one
+  // place (--reticle) so the picture and the decode region can't drift apart.
+  const viewportEl = $('viewport');
+  function reticleSize() {
+    return Math.max(120, Math.floor(Math.min(viewportEl.clientWidth * 0.68, viewportEl.clientHeight * 0.55, 320)));
+  }
+  function applyReticleSize() { document.documentElement.style.setProperty('--reticle', reticleSize() + 'px'); }
+  function fitCamera() {
+    const v = document.querySelector('#reader video');
+    if (!v || !v.videoWidth || !v.videoHeight) return;
+    const cw = viewportEl.clientWidth, ch = viewportEl.clientHeight;
+    const k = Math.max(cw / v.videoWidth, ch / v.videoHeight);
+    const w = Math.ceil(v.videoWidth * k), hgt = Math.ceil(v.videoHeight * k);
+    v.style.setProperty('width', w + 'px', 'important');
+    v.style.setProperty('height', hgt + 'px', 'important');
+    v.style.left = Math.round((cw - w) / 2) + 'px';
+    v.style.top = Math.round((ch - hgt) / 2) + 'px';
+  }
+  // The library adds the <video> itself; size it as soon as its dimensions are known (loadedmetadata fires before
+  // the library reads the element's size on "playing").
+  new MutationObserver(function () {
+    const v = document.querySelector('#reader video');
+    if (v && !v.__cooFit) {
+      v.__cooFit = true;
+      v.addEventListener('loadedmetadata', fitCamera);
+      v.addEventListener('resize', fitCamera);
+      fitCamera();
+    }
+  }).observe($('reader'), { childList: true, subtree: true });
+  applyReticleSize();
+  let cameraStartWidth = 0, resizeTimer = null;
+  window.addEventListener('resize', function () {
+    applyReticleSize();
+    clearTimeout(resizeTimer);
+    // Rotating the phone changes the width and invalidates the library's scan box: restart the camera then.
+    // (Height-only changes — the on-screen keyboard — are ignored on purpose.)
+    resizeTimer = setTimeout(function () {
+      if (cameraOn && Math.abs(viewportEl.clientWidth - cameraStartWidth) > 40) { stopCamera().then(startCamera); }
+    }, 400);
+  });
+
   function startCamera() {
-    // No qrbox: the whole frame is decoded, so a code is picked up anywhere in view; the reticle
-    // is guidance only. This also keeps decoding correct now that the video fills the viewport
-    // with object-fit: cover (a fixed-pixel qrbox assumes the video isn't cropped).
+    applyReticleSize();
     return html5QrCode.start(
       { facingMode: 'environment' },
-      { fps: 10 },
+      { fps: 10, qrbox: function () { const r = reticleSize(); return { width: r, height: r }; } },
       onDecode,
       function () { /* per-frame decode miss — expected constantly, ignore */ }
     ).then(function () {
+      cameraStartWidth = viewportEl.clientWidth;
+      fitCamera();
       setCameraUi(true);
       setupTorch();
     }).catch(function (err) {
@@ -1147,9 +1295,7 @@
     showToast(before === 0 ? 'Nothing to sync' : sent ? 'Synced ' + sent + ' queued scan' + (sent === 1 ? '' : 's') : 'Couldn’t sync yet — ' + before + ' still queued');
   });
   $('changeStationBtn').addEventListener('click', function () {
-    deviceId = askStationName();
-    $('stationLabel').textContent = deviceId;
-    showToast('Station set to ' + deviceId);
+    requireStation({ force: true }).then(function (name) { showToast('Station: ' + name); });
   });
   $('diagToggleBtn').addEventListener('click', function () {
     $('diagPanel').hidden = !$('diagPanel').hidden;
@@ -1179,7 +1325,7 @@
   callApi('ping GET', CONFIG.API_BASE + '?action=ping'); // warms the container; harmless on a server without ping
   trySyncOfflineQueue();
   fetchRoster();
-  startCamera();
+  requireStation().then(startCamera);
 })();
 </script>
 </body>

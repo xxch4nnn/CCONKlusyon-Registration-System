@@ -71,3 +71,12 @@ Needs Node and an installed Edge or Chrome (`BROWSER=<path>` to override). No np
   `cases/scan-guard.js` (BUG-001/002), `cases/retry-sync.js` (BUG-005 / offline queue / sync).
 - The runner fails if a case file doesn't load, so a syntax error can't silently skip tests. When fixing a bug,
   add the failing case first, watch it fail, then fix.
+
+### Suites in `node tests/run.js`
+Apps Script mocks · `scanner.html` with a station saved (`tests/scanner/cases`) · `scanner.html` **fresh install** with nothing saved (`tests/scanner/fresh`,
+BUG-007) · `display.html` wall (`tests/display`, BUG-010/011). Case files: `decode-guard`, `scan-guard`, `retry-sync`, `late-cards`, `station-gate`, `wall`.
+
+### Camera test: `node tests/camera.js`
+Real decoding against a **fake camera** (looped MJPEG clips in `tests/camera/clips`, regenerate with `python tests/camera/make-clips.py`; needs `qrcode` + `pillow`):
+QRs inside the on-screen frame must scan; QRs outside it, and an empty frame, must not (BUG-008). ~2 minutes, real time, needs Node 22+.
+`--scanner old.html` runs it against another copy — use it to prove a test catches the bug before fixing.
