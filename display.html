@@ -191,6 +191,8 @@
   function norm(v) { return String(v == null ? '' : v).trim().replace(/\s+/g, ' ').toLowerCase(); }
   function keyOf(a) { return norm(a.full_name) + '|' + norm(a.club_name); }
   function tsOf(a) { const t = Date.parse(a.checkin_timestamp); return isNaN(t) ? 0 : t; }
+  // The sheet holds 0 for a seat that hasn't been assigned yet — don't show it as a table.
+  function seatOf(v) { const t = String(v == null ? '' : v).trim(); return (!t || /^0+$/.test(t)) ? '' : t; }
   function tierOf(a) { return TIER[a.ticket_type] || TIER['Regular Attendee']; }
   function safeUrl(u) { return /^https?:\/\//i.test(String(u || '')) ? String(u) : ''; }
 
@@ -268,7 +270,7 @@
       card.appendChild(el('div', 'welcome', 'Welcome'));
       card.appendChild(el('div', 'name', a.full_name || ''));
       if (role) card.appendChild(el('div', 'meta', role));
-      if (a.table_allocation) card.appendChild(el('span', 'seat', String(a.table_allocation)));
+      if (seatOf(a.table_allocation)) card.appendChild(el('span', 'seat', seatOf(a.table_allocation)));
     } else {
       if (avatar) card.appendChild(avatar);
       const text = el('div', 'text');

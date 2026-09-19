@@ -80,3 +80,6 @@ BUG-007) · `display.html` wall (`tests/display`, BUG-010/011). Case files: `dec
 Real decoding against a **fake camera** (looped MJPEG clips in `tests/camera/clips`, regenerate with `python tests/camera/make-clips.py`; needs `qrcode` + `pillow`):
 QRs inside the on-screen frame must scan; QRs outside it, and an empty frame, must not (BUG-008). ~2 minutes, real time, needs Node 22+.
 `--scanner old.html` runs it against another copy — use it to prove a test catches the bug before fixing.
+
+Epic 4 checks (`E1`–`E15` in `code-gs.test.js`): the alert text against the spec template, retry/permanent-error/429 behaviour, the timing log and `vipAlertReport`,
+delayed-sync marking, and that Telegram trouble never fails a check-in.

@@ -97,4 +97,11 @@
     check('W9 shows a loading message while the first answer is pending', /loading/i.test(txt), JSON.stringify(txt.slice(0, 80)));
     f.remove();
   });
+
+  test('W10 an unassigned seat (0 / blank) shows no seat pill on the wall; a real seat does', async () => {
+    h.setPeople([person('Ana Reyes', 'CESA', '2026-10-02T12:00:00+08:00', { table_allocation: '0' }), person('Ben Cruz', 'JCI', '2026-10-02T12:01:00+08:00', { table_allocation: 'Table 5' }), person('Cy Diaz', 'ALAS', '2026-10-02T12:02:00+08:00', { table_allocation: '' })]);
+    await h.poll();
+    const seats = Array.from(document.querySelectorAll('#hero .seat')).map((e) => e.textContent);
+    check('W10 only the real seat is shown', seats.length === 1 && seats[0] === 'Table 5', JSON.stringify(seats));
+  });
 })();

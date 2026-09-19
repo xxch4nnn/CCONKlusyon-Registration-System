@@ -59,4 +59,17 @@
     await T.submitCheckin('48201');
     check('L5 offline wording unchanged', /MAY ALREADY BE CHECKED IN/.test(h.modalText()), h.modalText().slice(0, 80));
   });
+
+  test('L6 an unassigned seat (0 / blank) is not shown as "Table/Seat: 0"', async () => {
+    const withSeat = (t) => resolve(json({ status: 'SUCCESS', message: 'ok', data: { attendance_code: '48201', full_name: 'Sample Person', ticket_type: 'Regular Attendee', designation: 'Pres', club_name: 'CESA', table_allocation: t } }));
+    for (const t of ['0', 0, '', null]) {
+      h.setServer(() => withSeat(t));
+      await T.submitCheckin('48201');
+      check('L6 seat ' + JSON.stringify(t) + ' -> no seat pill', /CHECKED IN/.test(h.modalText()) && !/Table\/Seat/.test(h.modalText()), h.modalText().slice(0, 90));
+      T.closeModal(); T.resetScanState();
+    }
+    h.setServer(() => withSeat('Table 5'));
+    await T.submitCheckin('48201');
+    check('L6 a real seat is still shown', /Table\/Seat: Table 5/.test(h.modalText()), h.modalText().slice(0, 100));
+  });
 })();

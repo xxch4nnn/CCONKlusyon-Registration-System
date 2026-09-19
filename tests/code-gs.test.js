@@ -4,16 +4,16 @@ const mk=()=>[['email','full_name','org','club','desig','ticket','code','qr','ta
  ['a@x','Reg One','','CESA','Pres','Regular Attendee','11111','','Table 1','','','',''],
  ['b@x','Dr VIP','','UPEMS','Adviser','VIP Pass','22222','','VIP Table 01','','','',''],
  ['c@x','Reg Two','','CESA','Pres','Regular Attendee','33333','','Table 2','','','','']];
-let rows=mk(), logs=[], fetches=0; const props={};
+let rows=mk(), logs=[], fetches=0; const props={}; const tgQueue=[]; const tgSent=[]; const sleeps=[];
 const sheet={getDataRange:()=>({getValues:()=>rows}),getRange:(r,c)=>({setValue:v=>{rows[r-1][c-1]=v}})};
 const ctx={console:{log:m=>logs.push(m),error:m=>logs.push('ERR '+m)},JSON,Math,String,Date,Object,
  SpreadsheetApp:{getActiveSpreadsheet:()=>({getSheetByName:()=>sheet})},
  LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
- Utilities:{formatDate:()=>'2026-10-02T12:00:00+08:00'},
+ Utilities:{formatDate:(d,tz,f)=>String(f).includes('yyyy')?new Date().toISOString().replace('Z','+00:00'):'TIME',sleep:ms=>{sleeps.push(ms)}},
  ContentService:{MimeType:{JSON:'json'},createTextOutput:t=>({getContent:()=>t,setMimeType(){return this}})},
- PropertiesService:{getScriptProperties:()=>({getProperty:k=>(props[k]==null?null:props[k])})},
- UrlFetchApp:{fetch:()=>{fetches++;return{getResponseCode:()=>200,getContentText:()=>''}}}};
-vm.createContext(ctx); vm.runInContext(src+'\nthis.doGet=doGet;this.doPost=doPost;this.auditRosterRows_=auditRosterRows_;this.formatAudit_=formatAudit_;this.resetTestCheckins=resetTestCheckins;',ctx);
+ PropertiesService:{getScriptProperties:()=>({getProperty:k=>(props[k]==null?null:props[k]),setProperty:(k,v)=>{props[k]=v}})},
+ UrlFetchApp:{fetch:(u,o)=>{fetches++;tgSent.push(o&&o.payload?JSON.parse(o.payload):null);const n=tgQueue.length?tgQueue.shift():{code:200};if(n.throw)throw new Error(n.throw);return{getResponseCode:()=>n.code,getContentText:()=>n.body!==undefined?n.body:JSON.stringify({ok:true,result:{date:Math.floor(Date.now()/1000)+1}})}}}};
+vm.createContext(ctx); vm.runInContext(src+'\nthis.doGet=doGet;this.doPost=doPost;this.auditRosterRows_=auditRosterRows_;this.buildVipAlertText_=typeof buildVipAlertText_=="function"?buildVipAlertText_:undefined;this.notifyVipTelegram_=notifyVipTelegram_;this.vipAlertReport=typeof vipAlertReport=="function"?vipAlertReport:undefined;this.handleSync_=handleSync_;this.formatAudit_=formatAudit_;this.resetTestCheckins=resetTestCheckins;',ctx);
 const J=o=>JSON.parse(o.getContent());
 const post=(body,params)=>J(ctx.doPost({postData:{contents:typeof body==='string'?body:JSON.stringify(body)},parameter:params||{}}));
 const get=params=>J(ctx.doGet({parameter:params}));
@@ -95,5 +95,31 @@ props.TEST_RESET_CODES=Array.from({length:31},(_,i)=>String(10000+i)).join(',');
 r=ctx.resetTestCheckins();
 ok('RESET refuses more than 30 codes', r.reset===0 && rows[1][10]==='Checked-In');
 delete props.TEST_RESET_CODES;
+
+// ---- Epic 4: VIP Telegram alert ---------------------------------------------------------------------------
+const T4=(name,fn)=>{try{fn()}catch(e){ok(name+' — threw',false,String(e&&e.message||e))}};
+const vip={full_name:'Dr Sample',designation:'Adviser',club_name:'UPEMS',table_allocation:'VIP Table 01'};
+const reset4=()=>{rows=mk();tgQueue.length=0;tgSent.length=0;sleeps.length=0;fetches=0;logs.length=0;delete props.VIP_ALERT_LOG;props.TELEGRAM_BOT_TOKEN='TOK';props.TELEGRAM_CHAT_ID='CHAT'};
+const EXPECT='⭐ VIP ARRIVAL DETECTED ⭐\nName: Dr Sample\nRole: Adviser (UPEMS)\nAssigned Seat: VIP Table 01\nTime: TIME\n\n👉 Designated Escort: Usher Lead please acknowledge and proceed to Entrance.';
+
+T4('E1',()=>{ ok('E1 alert text matches the spec template exactly', ctx.buildVipAlertText_&&ctx.buildVipAlertText_(vip)===EXPECT, ctx.buildVipAlertText_?JSON.stringify(ctx.buildVipAlertText_(vip)):'buildVipAlertText_ missing'); });
+T4('E2',()=>{ ['0',0,'',null,undefined,'  '].forEach(v=>ok('E2 unassigned seat '+JSON.stringify(v)+' -> "Not yet assigned"', ctx.buildVipAlertText_&&ctx.buildVipAlertText_(Object.assign({},vip,{table_allocation:v})).includes('Assigned Seat: Not yet assigned'))); });
+T4('E3',()=>{ const t=ctx.buildVipAlertText_(Object.assign({},vip,{club_name:''})); ok('E3 no club -> no empty parentheses', t.includes('Role: Adviser\n')&&!t.includes('()')); ok('E3 missing designation -> dash', ctx.buildVipAlertText_(Object.assign({},vip,{designation:''})).includes('Role: — (UPEMS)')); });
+T4('E4',()=>{ ok('E4 no delayed marker for a live scan', !ctx.buildVipAlertText_(vip).includes('offline')); const d=ctx.buildVipAlertText_(vip,{delayed:true}); ok('E4 delayed marker for a queued/synced scan', /offline/i.test(d)&&d.endsWith('proceed to Entrance.')); });
+
+T4('E5',()=>{ reset4(); tgQueue.push({code:500,body:'err'},{code:200}); const r=ctx.notifyVipTelegram_(vip); ok('E5 500 then 200 -> retried and delivered', r.ok===true&&r.attempts===2&&tgSent.length===2&&sleeps.length===1, JSON.stringify(r)); });
+T4('E6',()=>{ reset4(); tgQueue.push({code:403,body:'{"ok":false,"description":"Forbidden"}'}); const r=ctx.notifyVipTelegram_(vip); ok('E6 403 (bad chat/token) is not retried', r.ok===false&&r.attempts===1&&tgSent.length===1, JSON.stringify(r)); });
+T4('E7',()=>{ reset4(); tgQueue.push({code:429,body:'{"ok":false,"parameters":{"retry_after":1}}'},{code:200}); const r=ctx.notifyVipTelegram_(vip); ok('E7 429 honours retry_after (capped at 2 s) then delivers', r.ok===true&&r.attempts===2&&sleeps[0]>=1000&&sleeps[0]<=2000, JSON.stringify(r)+' sleeps='+sleeps); });
+T4('E8',()=>{ reset4(); tgQueue.push({throw:'network'},{code:200}); const r=ctx.notifyVipTelegram_(vip); ok('E8 thrown network error then 200 -> delivered', r.ok===true&&r.attempts===2, JSON.stringify(r)); });
+T4('E9',()=>{ reset4(); tgQueue.push({code:500},{code:500}); const chk=post({action:'checkin',attendance_code:'22222',device_id:'T'}); ok('E9 Telegram down: check-in still SUCCESS', chk.status==='SUCCESS'&&rows[2][10]==='Checked-In'); const L=JSON.parse(props.VIP_ALERT_LOG||'[]'); ok('E9 failure is recorded in the alert log', L.length===1&&L[0].ok===false, props.VIP_ALERT_LOG); });
+T4('E10',()=>{ reset4(); post({action:'checkin',attendance_code:'22222',device_id:'T'}); const L=JSON.parse(props.VIP_ALERT_LOG||'[]'); ok('E10 successful alert logged with timings', L.length===1&&L[0].ok===true&&typeof L[0].ms==='number'&&typeof L[0].tgMs==='number'&&L[0].delaySec>=0&&L[0].delaySec<=3, props.VIP_ALERT_LOG);
+  for(let i=0;i<25;i++){ rows=mk(); post({action:'checkin',attendance_code:'22222',device_id:'T'}); } ok('E10 log keeps only the last 20', JSON.parse(props.VIP_ALERT_LOG).length===20); });
+T4('E11',()=>{ reset4(); const r0=ctx.vipAlertReport&&ctx.vipAlertReport(); ok('E11 report on an empty log', r0&&r0.count===0, JSON.stringify(r0));
+  for(let i=0;i<3;i++){ rows=mk(); post({action:'checkin',attendance_code:'22222',device_id:'T'}); } const r=ctx.vipAlertReport(); ok('E11 report summarises count / delivered / within 3 s', r.count===3&&r.delivered===3&&r.within3s===3&&typeof r.maxMs==='number', JSON.stringify(r)); });
+T4('E12',()=>{ reset4(); post({action:'checkin',attendance_code:'22222',device_id:'T'}); ok('E12 live scan: no delayed marker', tgSent.length===1&&!/offline/i.test(tgSent[0].text)); reset4();
+  ctx.handleSync_({items:[{action:'checkin',attendance_code:'22222',device_id:'T'}]}); ok('E12 synced (queued offline) scan: marked delayed', tgSent.length===1&&/offline/i.test(tgSent[0].text), JSON.stringify(tgSent[0]&&tgSent[0].text)); });
+T4('E13',()=>{ reset4(); post({action:'checkin',attendance_code:'11111',device_id:'T'}); ok('E13 regular attendee: no alert', tgSent.length===0); post({action:'checkin',attendance_code:'22222',device_id:'T'}); const n=tgSent.length; post({action:'checkin',attendance_code:'22222',device_id:'T'}); ok('E13 duplicate VIP scan: no second alert', n===1&&tgSent.length===1); });
+T4('E14',()=>{ reset4(); delete props.TELEGRAM_BOT_TOKEN; const chk=post({action:'checkin',attendance_code:'22222',device_id:'T'}); ok('E14 not provisioned: check-in fine, no request, nothing logged', chk.status==='SUCCESS'&&tgSent.length===0&&!props.VIP_ALERT_LOG); });
+T4('E15',()=>{ const a=audit([H,Object.assign(good(1,'48201'),{8:'0'}),Object.assign(good(2,'48202'),{8:0}),Object.assign(good(3,'48203'),{8:'Table 0'})]); ok('E15 audit warns when table_allocation is 0 (unassigned)', a.warnings.filter(w=>w.field==='table_allocation').length===3, a.warnings.map(w=>w.field+':'+w.row).join()); });
 
 console.log(fail?('\n'+fail+' FAILED'):'\nALL PASS'); process.exit(fail?1:0);

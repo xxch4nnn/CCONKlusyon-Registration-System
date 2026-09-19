@@ -824,7 +824,7 @@
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
-        (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
+        (seatOf(data.table_allocation) ? '<span class="seat">Table/Seat: ' + escapeHtml_(seatOf(data.table_allocation)) + '</span>' : '') +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else if (status === 'DUPLICATE') {
       // Deliberately distinct from SUCCESS regardless of tier color — an amber bar, warning
@@ -838,7 +838,7 @@
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
-        (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
+        (seatOf(data.table_allocation) ? '<span class="seat">Table/Seat: ' + escapeHtml_(seatOf(data.table_allocation)) + '</span>' : '') +
         (data.initial_checkin_timestamp ? '<div><span class="first-seen">First checked in at ' + escapeHtml_(fmtTime(data.initial_checkin_timestamp)) + '</span></div>' : '') +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else if (status === 'QUEUED_OFFLINE') {
@@ -858,7 +858,7 @@
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
-        (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
+        (seatOf(data.table_allocation) ? '<span class="seat">Table/Seat: ' + escapeHtml_(seatOf(data.table_allocation)) + '</span>' : '') +
         '<span class="offline-note">' + (suspectDup
           ? (data._reason === 'server'
             ? 'The server didn’t confirm this scan (it’s saved and will sync). The roster on this phone says this pass was already checked in, but that copy may be out of date — tap ⚙️ → Refresh roster, or check the printed roster.'
@@ -889,6 +889,9 @@
     if (autoMs) dismissTimer = setTimeout(closeModal, autoMs);
   }
   window.cco_closeModal = closeModal;
+
+  // The sheet holds 0 for a seat that hasn't been assigned yet — that isn't a table, so don't show "Table/Seat: 0".
+  function seatOf(v) { const t = String(v == null ? '' : v).trim(); return (!t || /^0+$/.test(t)) ? '' : t; }
 
   function escapeHtml_(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');

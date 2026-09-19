@@ -140,7 +140,8 @@ function handlePing_() {
 }
 
 /** Endpoint 1: check-in. */
-function handleCheckin_(body) {
+function handleCheckin_(body, opts) {
+  const t0 = Date.now();
   const code = String(body.attendance_code || '').trim();
   const deviceId = body.device_id || 'unknown';
   if (!code) return jsonOut_({ status: 'ERROR', message: 'Missing attendance_code.' });
@@ -162,11 +163,14 @@ function handleCheckin_(body) {
   // Telegram runs AFTER the lock is released: the HTTP call takes hundreds of ms, and holding the
   // script lock across it would make every other usher's scan wait behind a VIP alert.
   if (result.status === 'SUCCESS' && result.data.ticket_type === 'VIP Pass') {
+    let info;
     try {
-      notifyVipTelegram_(result.data);
+      info = notifyVipTelegram_(result.data, { delayed: !!(opts && opts.delayed) });
     } catch (err) {
       console.error('VIP Telegram alert failed: ' + err); // never block or fail a check-in over Telegram
+      info = { ok: false, attempts: 0, ms: 0, error: String(err) };
     }
+    if (!info.skipped) recordVipAlert_(info, Date.now() - t0); // Story 4.1.4 evidence; see vipAlertReport()
   }
 
   return jsonOut_(result);
@@ -275,7 +279,7 @@ function handleSync_(body) {
   const items = body.items || [];
   const results = [];
   items.forEach(function (item) {
-    const r = handleCheckin_(item);
+    const r = handleCheckin_(item, { delayed: true }); // a queued offline scan: any VIP alert it raises is late
     results.push(JSON.parse(r.getContent()));
   });
   return jsonOut_({ status: 'SUCCESS', results: results });
@@ -284,37 +288,106 @@ function handleSync_(body) {
 /**
  * Epic 4 — VIP Telegram alert. Credentials live ONLY in Script Properties (Project Settings ->
  * Script properties): TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID. Never put them in this file.
- * Returns true if Telegram accepted the message; false if not provisioned or Telegram refused it.
+ * Returns { ok, attempts, ms, delaySec?, skipped? }: `skipped` when not provisioned; otherwise `ok` says whether Telegram
+ * accepted the message. One retry on a transient failure (5xx, network error, 429 honouring retry_after up to 2 s);
+ * permanent errors (bad token/chat) are not retried. Never throws.
  */
-function notifyVipTelegram_(attendeeData) {
+function notifyVipTelegram_(attendeeData, opts) {
   const props = PropertiesService.getScriptProperties();
   const token = props.getProperty('TELEGRAM_BOT_TOKEN');
   const chatId = props.getProperty('TELEGRAM_CHAT_ID');
-  if (!token || !chatId) return false; // not provisioned — silently skip, do not throw
+  if (!token || !chatId) return { ok: false, skipped: true, attempts: 0, ms: 0 }; // not provisioned — silently skip
 
-  const blank = function (v) { return v ? String(v) : '—'; };
-  const club = attendeeData.club_name ? ' (' + attendeeData.club_name + ')' : '';
-  const time = Utilities.formatDate(new Date(), 'GMT+8', 'h:mm:ss a');
-
-  // Template per MVP spec, Component C.
-  const text = '⭐ VIP ARRIVAL DETECTED ⭐\n' +
-    'Name: ' + blank(attendeeData.full_name) + '\n' +
-    'Role: ' + blank(attendeeData.designation) + club + '\n' +
-    'Assigned Seat: ' + blank(attendeeData.table_allocation) + '\n' +
-    'Time: ' + time + '\n\n' +
-    '👉 Designated Escort: Usher Lead please acknowledge and proceed to Entrance.';
-
-  const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
-    method: 'post',
-    contentType: 'application/json',
-    payload: JSON.stringify({ chat_id: chatId, text: text }),
-    muteHttpExceptions: true // read the status ourselves so a refusal is logged instead of thrown
-  });
-  if (res.getResponseCode() !== 200) {
-    console.error('Telegram sendMessage failed: HTTP ' + res.getResponseCode() + ' ' + res.getContentText());
-    return false;
+  const payload = JSON.stringify({ chat_id: chatId, text: buildVipAlertText_(attendeeData, opts) });
+  const started = Date.now();
+  let attempts = 0, code = 0, body = '';
+  while (attempts < 2) {
+    attempts++;
+    let wait = 400;
+    try {
+      const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+        method: 'post',
+        contentType: 'application/json',
+        payload: payload,
+        muteHttpExceptions: true // read the status ourselves so a refusal is logged instead of thrown
+      });
+      code = res.getResponseCode();
+      body = res.getContentText();
+      if (code === 200) return { ok: true, attempts: attempts, ms: Date.now() - started, delaySec: telegramDelaySec_(body, attendeeData) };
+      if (code >= 400 && code < 500 && code !== 429) break; // permanent (bad token / chat): retrying can't help
+      if (code === 429) { try { wait = Math.min(2000, (JSON.parse(body).parameters.retry_after || 1) * 1000); } catch (e) { wait = 1000; } }
+    } catch (err) {
+      body = String(err);
+    }
+    if (attempts < 2) Utilities.sleep(wait);
   }
-  return true;
+  console.error('Telegram sendMessage failed after ' + attempts + ' attempt(s): HTTP ' + code + ' ' + body);
+  return { ok: false, attempts: attempts, ms: Date.now() - started, code: code };
+}
+
+/** Seconds between the check-in and Telegram's own timestamp for the message (Telegram `date`), or null. */
+function telegramDelaySec_(body, attendeeData) {
+  try {
+    const sent = JSON.parse(body).result.date; // unix seconds, set by Telegram
+    const scanned = Date.parse(attendeeData.checkin_timestamp) / 1000;
+    return isNaN(scanned) ? null : Math.max(0, Math.round(sent - scanned));
+  } catch (e) { return null; }
+}
+
+/** "Not yet assigned" for a blank or 0 seat (the sheet currently holds 0 for unassigned rows). */
+function seatText_(v) {
+  const t = String(v == null ? '' : v).trim();
+  return (!t || /^0+$/.test(t)) ? 'Not yet assigned' : t;
+}
+
+/** The alert text — MVP spec Component C template. Pure, so it can be unit-tested. `opts.delayed` marks a queued scan. */
+function buildVipAlertText_(a, opts) {
+  const blank = function (v) { return v ? String(v) : '—'; };
+  const club = a.club_name ? ' (' + a.club_name + ')' : '';
+  const time = Utilities.formatDate(new Date(), 'GMT+8', 'h:mm:ss a');
+  return '⭐ VIP ARRIVAL DETECTED ⭐\n' +
+    'Name: ' + blank(a.full_name) + '\n' +
+    'Role: ' + blank(a.designation) + club + '\n' +
+    'Assigned Seat: ' + seatText_(a.table_allocation) + '\n' +
+    'Time: ' + time + '\n' +
+    (opts && opts.delayed ? '⏱ Scanned while offline — the guest may have arrived a few minutes ago.\n' : '') +
+    '\n👉 Designated Escort: Usher Lead please acknowledge and proceed to Entrance.';
+}
+
+// ---- Alert timing log (Story 4.1.4 / QA Gate 3: "VIP alert lands within 3 s of the scan") ------------------------------
+const VIP_ALERT_LOG_KEY = 'VIP_ALERT_LOG';
+const VIP_ALERT_LOG_MAX = 20;
+function readVipAlertLog_() {
+  try { return JSON.parse(PropertiesService.getScriptProperties().getProperty(VIP_ALERT_LOG_KEY) || '[]'); } catch (e) { return []; }
+}
+/** Keeps the last 20 alerts (no names): server time from request start, Telegram round trip, attempts, Telegram-side delay. */
+function recordVipAlert_(info, totalMs) {
+  try {
+    const log = readVipAlertLog_();
+    log.push({ t: new Date().toISOString(), ok: !!info.ok, ms: totalMs, tgMs: info.ms, attempts: info.attempts, delaySec: info.delaySec == null ? null : info.delaySec, code: info.code || null });
+    PropertiesService.getScriptProperties().setProperty(VIP_ALERT_LOG_KEY, JSON.stringify(log.slice(-VIP_ALERT_LOG_MAX)));
+  } catch (e) { console.error('Could not record VIP alert timing: ' + e); }
+}
+/**
+ * Story 4.1.4 — run from the editor after checking in a few VIP test rows. Summarises the last 20 alerts. "Within 3 s" counts
+ * SERVER time (request received -> Telegram accepted) plus Telegram's own timestamp delay; add the phone's network time
+ * (see the scanner's Connection log) for the true door-to-phone figure.
+ */
+function vipAlertReport() {
+  const log = readVipAlertLog_();
+  const ok = log.filter(function (e) { return e.ok; });
+  const ms = ok.map(function (e) { return e.ms; }).sort(function (x, y) { return x - y; });
+  const delays = ok.map(function (e) { return e.delaySec; }).filter(function (d) { return d != null; });
+  const report = {
+    count: log.length, delivered: ok.length, failed: log.length - ok.length,
+    within3s: ok.filter(function (e) { return e.ms <= 3000 && (e.delaySec == null || e.delaySec <= 3); }).length,
+    medianMs: ms.length ? ms[Math.floor(ms.length / 2)] : null,
+    maxMs: ms.length ? ms[ms.length - 1] : null,
+    maxDelaySec: delays.length ? Math.max.apply(null, delays) : null
+  };
+  console.log('VIP ALERT REPORT — ' + report.count + ' alert(s): ' + report.delivered + ' delivered, ' + report.failed + ' failed; ' +
+    report.within3s + ' within 3 s; server median ' + report.medianMs + ' ms, max ' + report.maxMs + ' ms; max Telegram delay ' + report.maxDelaySec + ' s');
+  return report;
 }
 
 /**
@@ -347,13 +420,13 @@ function testTelegramPing() {
  */
 function testVipAlertTemplate() {
   const t0 = Date.now();
-  const sent = notifyVipTelegram_({
+  const r = notifyVipTelegram_({
     full_name: 'TEST — Dr. Sample VIP',
     designation: 'Organization Adviser',
     club_name: 'Test Club',
     table_allocation: 'VIP Table 01'
   });
-  console.log((sent ? 'Sent' : 'NOT sent (check Script Properties / logs)') + ' in ' + (Date.now() - t0) + ' ms');
+  console.log((r.ok ? 'Sent' : (r.skipped ? 'NOT sent — Script Properties not set' : 'NOT sent (see logs)')) + ' in ' + (Date.now() - t0) + ' ms (' + r.attempts + ' attempt(s))');
 }
 
 /* ------------------------------------------------------------------------------------------------
@@ -435,7 +508,8 @@ function auditRosterRows_(values, formulas) {
       add(warnings, rowNum, 'checkin_timestamp/checked_in_by', 'filled although status is not Checked-In');
     }
 
-    if (!cell(row, COL.TABLE_ALLOC)) add(warnings, rowNum, 'table_allocation', 'blank');
+    const table = cell(row, COL.TABLE_ALLOC);
+    if (!table || /^(table\s*)?0+$/i.test(table)) add(warnings, rowNum, 'table_allocation', 'blank or 0 — no seat assigned yet (VIP alerts will say "Not yet assigned")');
     if (!cell(row, COL.DESIGNATION)) add(warnings, rowNum, 'designation', 'blank');
     if (!cell(row, COL.CLUB_NAME)) add(warnings, rowNum, 'club_name', 'blank');
     const photo = cell(row, COL.PHOTO_URL);
