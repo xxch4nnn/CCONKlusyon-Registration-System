@@ -20,8 +20,10 @@ when it happens.
 - **Duplicate scans:** must be atomically blocked, never double-counted.
 
 ## Live infrastructure (as confirmed, not assumed)
-- **GitHub repo:** `xxch4nnn/CCONKlusyon-Registration-System` — empty except README as of Epic 1 start.
-  Claude has **read-only** access (public clone); no push/PR capability. Code is handed over as files.
+- **GitHub repo:** `xxch4nnn/CCONKlusyon-Registration-System`. Claude's git-push proxy needs this
+  repo added to the session's authorized repository set before Claude can push directly — until
+  then, code changes ship as files for the user to commit/upload themselves (as has been the
+  workflow through Epics 1-3).
 - **Working workbook:** `1memjsk0qCcFqAdL5yMXAYU0iFf5OkGk1cwg0e56FbOY`
   - **Registration DB tab:** `Master_Attendance` (gid=155323925) — the only tab Claude may write to
     (via Apps Script the user deploys — Claude does not write to any Sheet directly).
@@ -38,7 +40,7 @@ Code targets the real sheet, not the idealized one.
 
 | Col | Field | Notes |
 |---|---|---|
-| A | `email` | **Currently blank on all 10 test rows** — blocks Epic 2 (email blast) until filled |
+| A | `email` | Filled for all 10 real rows (Sept 19) — USeP institutional addresses. |
 | B | `full_name` | |
 | C | `org_classification` | **Nullable by design for VIPs** — spec correction (Sept 19): VIPs represent the institution, not a specific org, so blank/N-A is correct for `ticket_type:"VIP Pass"`. Only a real gap for Regular Attendee rows. |
 | D | `club_name` | |
@@ -56,6 +58,25 @@ Code targets the real sheet, not the idealized one.
 - `POST /api/checkin` — `{action:"checkin", attendance_code, device_id}` → `SUCCESS` \| `DUPLICATE` \| `NOT_FOUND`
 - `POST /api/sync` — `{action:"sync", items:[...]}` — bulk offline-queue flush
 - `GET /api/recent?limit=N` — `{action:"recent"}` — feeds the projector wall
+- `GET /api/roster` — `{action:"roster"}` — full attendee list (no `email`), cached client-side by
+  `scanner.html` for offline VIP identification (added post-Epic-3, see `CHANGES.md`)
+
+## Frontend files (zero-build, GitHub Pages)
+- `scanner.html` — Usher Scanner PWA (Epic 3). Single file, `html5-qrcode` via CDN. Wired to
+  `POST /api/checkin`, `POST /api/sync`, `GET /api/roster`. `CONFIG.API_BASE` must match the live
+  `/exec` deployment URL. Offline scans queue in `localStorage.cco_offline_scans`, auto-flush on
+  reconnect; the roster cache (`localStorage.cco_roster_cache`) lets a scan still show tier/name
+  offline. Camera can be toggled off (battery saving) without losing manual-entry function. No
+  manifest/service worker (not in the Epic 3 story list — app-level offline queue only, not full
+  installability).
+
+## Repo structure
+Currently flat (`Code.gs`, `EmailBlaster.gs`, `scanner.html` all at repo root) — the user uploaded
+directly via GitHub's web UI rather than through a `git push` from Claude (session's git-push
+proxy doesn't have this repo authorized yet). Fine as-is for now: only two backend files, and
+GitHub Pages serves the frontend straight from root either way. Revisit moving the `.gs` files
+into an `apps-script/` folder once Epic 4 (Telegram) or Epic 5 (projector wall / `display.html`)
+adds enough files that a flat root gets noisy — not before, per "improvise only when necessary."
 
 ## Apps Script gotcha (worth remembering)
 Any top-level function named with a trailing underscore (e.g. `handleCheckin_`) is treated as
@@ -63,7 +84,10 @@ Any top-level function named with a trailing underscore (e.g. `handleCheckin_`) 
 to be run manually from the editor (like `generateCredentials`) must NOT have a trailing underscore.
 Internal helpers keep the underscore on purpose (signals "don't call this manually").
 
-## What Claude can/cannot touch directly (see the Build Plan doc for the full breakdown)
-- Can read: GitHub (public), the whole workbook, all linked Docs, Drive folder.
-- Can write: nothing directly — all Sheet/Apps Script changes ship as files for the user to paste in.
+## What Claude can/cannot touch directly
+- Can read: GitHub (public clone, always), the whole workbook, all linked Docs, Drive folder.
+- Can write: the GitHub repo, once it's added to this session's authorized repository set (ask
+  the user to add it under their environment/session's connected sources); nothing directly in
+  any Sheet — all Sheet/Apps Script changes still ship as files for the user to paste in and
+  deploy, since Claude has no Apps Script execution access regardless of GitHub access.
 - Cannot access at all: Telegram bot token/channel, Apps Script execution/deployment.

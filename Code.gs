@@ -98,6 +98,7 @@ function doGet(e) {
     const limit = parseInt(e.parameter.limit, 10) || 12;
     return handleRecent_(limit);
   }
+  if (action === 'roster') return handleRoster_();
   return jsonOut_({ status: 'ERROR', message: 'Unknown action.' });
 }
 
@@ -192,6 +193,33 @@ function handleRecent_(limit) {
 
   attendees.sort((a, b) => new Date(b.checkin_timestamp) - new Date(a.checkin_timestamp));
   return jsonOut_({ status: 'SUCCESS', count: Math.min(limit, attendees.length), attendees: attendees.slice(0, limit) });
+}
+
+/**
+ * Endpoint: full roster, for the scanner PWA to cache client-side (Epic 3, offline VIP
+ * identification mitigation — added post-Epic-3 build, see CHANGES.md). Deliberately excludes
+ * `email` (no reason a door device needs it). Read-only — does not write to the sheet.
+ */
+function handleRoster_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+  const attendees = [];
+
+  for (let r = 1; r < data.length; r++) {
+    const row = data[r];
+    if (!row[COL.FULL_NAME - 1] || !row[COL.ATTENDANCE_CODE - 1]) continue; // skip empty/uncredentialed rows
+    attendees.push({
+      attendance_code: String(row[COL.ATTENDANCE_CODE - 1]),
+      full_name: row[COL.FULL_NAME - 1],
+      club_name: row[COL.CLUB_NAME - 1],
+      designation: row[COL.DESIGNATION - 1],
+      ticket_type: row[COL.TICKET_TYPE - 1],
+      table_allocation: row[COL.TABLE_ALLOC - 1],
+      checkin_status: row[COL.CHECKIN_STATUS - 1] || 'Pending'
+    });
+  }
+
+  return jsonOut_({ status: 'SUCCESS', count: attendees.length, attendees: attendees });
 }
 
 /** Endpoint 3: bulk offline-queue flush from the scanner PWA. */

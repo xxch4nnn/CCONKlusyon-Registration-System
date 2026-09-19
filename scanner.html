@@ -12,6 +12,8 @@
   GitHub Pages. Wires to the live Code.gs API contract:
     POST {action:"checkin", attendance_code, device_id} -> SUCCESS | DUPLICATE | NOT_FOUND
     POST {action:"sync", items:[...]}                    -> bulk offline-queue flush
+    GET  ?action=roster                                  -> full attendee list, cached client-side
+                                                             for offline VIP identification
   html5-qrcode loaded from jsdelivr per Story 3.1.1 (spec explicitly calls for "via CDN").
 
   Before using: set CONFIG.API_BASE below to the live /exec URL (same one Code.gs was
@@ -28,31 +30,39 @@
     --bg: #0B0E14; --panel: #151A24; --text: #F3F4F6; --muted: #9CA3AF;
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html { overflow-x: hidden; width: 100%; }
   html, body { height: 100%; margin: 0; overscroll-behavior: none; }
   body {
     background: var(--bg); color: var(--text);
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
     display: flex; flex-direction: column; min-height: 100vh;
+    width: 100%; overflow-x: hidden;
   }
   header {
-    display: flex; align-items: center; justify-content: space-between;
+    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px;
     padding: 10px 14px; background: var(--panel); border-bottom: 1px solid #232938;
-    font-size: 13px; color: var(--muted);
+    font-size: 12px; color: var(--muted);
   }
   header b { color: var(--text); }
   #offlineBanner {
     background: var(--amber); color: #1A1200; font-weight: 700; text-align: center;
     padding: 8px 10px; font-size: 14px; letter-spacing: 0.3px;
   }
+  /* Camera preview: html5-qrcode sets pixel dimensions on the injected <video>/<canvas> that
+     can exceed the container on some devices — force them back to 100% width (Story 3.1 UI fix). */
   #reader { width: 100%; max-width: 480px; margin: 12px auto 0; border-radius: 12px; overflow: hidden; }
-  #reader video { border-radius: 12px; }
-  main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 14px 14px; }
-  .controls { display: flex; gap: 10px; width: 100%; max-width: 480px; margin-top: 14px; }
-  button {
-    font: inherit; font-weight: 700; border: none; border-radius: 10px; padding: 14px 16px;
-    font-size: 15px; cursor: pointer; color: #fff; flex: 1;
+  #reader video, #reader canvas, #reader img {
+    width: 100% !important; height: auto !important; max-width: 100%; border-radius: 12px; display: block;
   }
-  #torchBtn { background: #374151; }
+  main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 14px 14px; width: 100%; }
+  .controls {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 480px; margin-top: 14px;
+  }
+  button {
+    font: inherit; font-weight: 700; border: none; border-radius: 10px; padding: 14px 10px;
+    font-size: 14px; cursor: pointer; color: #fff; width: 100%;
+  }
+  #torchBtn, #cameraToggleBtn { background: #374151; }
   #manualBtn { background: #374151; }
   #manualPanel {
     width: 100%; max-width: 480px; margin-top: 14px; background: var(--panel);
@@ -63,7 +73,11 @@
     border: 1px solid #374151; background: #0B0E14; color: var(--text); text-align: center;
   }
   #manualSubmit { background: var(--blue); flex: 0 0 auto; }
-  #queueNote { font-size: 12px; color: var(--muted); margin-top: 8px; }
+  #queueNote { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; }
+  #readerPaused {
+    width: 100%; max-width: 480px; margin: 12px auto 0; border-radius: 12px; padding: 40px 20px;
+    background: var(--panel); border: 1px dashed #374151; text-align: center; color: var(--muted); font-size: 14px;
+  }
 
   /* Full-screen state flash (Story 3.2.2) — soft radial pulse, not a hard strobe */
   #flash {
@@ -104,6 +118,8 @@
   .card .msg { font-size: 16px; font-weight: 800; margin: 0 0 6px; }
   .card .first-seen { display: inline-block; margin-top: 12px; padding: 6px 14px; border-radius: 20px;
     background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; }
+  .card .offline-note { display: block; margin-top: 14px; font-size: 12px; color: #92400E;
+    background: #FEF3C7; border-radius: 8px; padding: 8px 10px; }
   .card.error .body { padding-top: 26px; }
   .card button.close { margin: 0; width: calc(100% - 40px); margin: 0 20px 20px; background: #111827; }
   [hidden] { display: none !important; }
@@ -113,6 +129,7 @@
   <div id="offlineBanner" hidden>OFFLINE MODE — scans are queued locally and will sync automatically</div>
   <header>
     <span>Station: <b id="stationLabel">—</b></span>
+    <span id="rosterBadge">Roster: not cached yet</span>
     <span id="queueBadge">Queue: 0</span>
   </header>
 
@@ -120,7 +137,9 @@
 
   <main>
     <div id="reader"></div>
+    <div id="readerPaused" hidden>📷 Camera paused to save battery.<br>Tap "Turn Camera On" or use manual entry below.</div>
     <div class="controls">
+      <button id="cameraToggleBtn">📷 Turn Camera Off</button>
       <button id="torchBtn" hidden>🔦 Flashlight</button>
       <button id="manualBtn">⌨️ Enter Code Manually</button>
     </div>
@@ -143,12 +162,14 @@
     API_BASE: 'https://script.google.com/macros/s/AKfycbwspVxuQu0vJcih48ggE_npLpUBPZE1Y4QucTxl5-Qgmn2M9JcZWVbJ-yKmmzOhAAkq/exec',
     SCAN_FREEZE_MS: 2000,       // Story 3.1.3
     AUTO_SYNC_INTERVAL_MS: 15000,
+    ROSTER_REFRESH_INTERVAL_MS: 5 * 60 * 1000, // 5 min — roster changes rarely mid-event
     TIER_COLORS: {
       'VIP Pass': '#B8860B',
       'Regular Attendee': '#1A56DB'
     },
     DEVICE_ID_KEY: 'cco_device_id',
-    OFFLINE_QUEUE_KEY: 'cco_offline_scans'
+    OFFLINE_QUEUE_KEY: 'cco_offline_scans',
+    ROSTER_CACHE_KEY: 'cco_roster_cache'
   };
 
   // ---- Device / station id -----------------------------------------------------------
@@ -204,6 +225,48 @@
   window.addEventListener('online', updateQueueUi);
   window.addEventListener('offline', updateQueueUi);
   setInterval(trySyncOfflineQueue, CONFIG.AUTO_SYNC_INTERVAL_MS);
+
+  // ---- Roster cache — lets a scan be identified (name/tier/table) even with no connection.
+  // Without this, an offline scan can only be queued blind: the usher has no way to tell a VIP
+  // from a Regular Attendee until the sync catches up, which defeats the door's main job of
+  // fast VIP recognition. Fetched while online, read from localStorage when offline; keyed by
+  // attendance_code. Requires Code.gs to expose GET ?action=roster (see AGENTS.md).
+  function readRosterCache() {
+    try { return JSON.parse(localStorage.getItem(CONFIG.ROSTER_CACHE_KEY) || 'null'); }
+    catch (e) { return null; }
+  }
+  function lookupRoster(code) {
+    const cache = readRosterCache();
+    return (cache && cache.byCode && cache.byCode[code]) || null;
+  }
+  function updateRosterBadge() {
+    const cache = readRosterCache();
+    const el = document.getElementById('rosterBadge');
+    if (!cache) { el.textContent = 'Roster: not cached yet'; return; }
+    const n = Object.keys(cache.byCode || {}).length;
+    const t = new Date(cache.syncedAt);
+    const hh = String(t.getHours()).padStart(2, '0'), mm = String(t.getMinutes()).padStart(2, '0');
+    el.textContent = 'Roster: ' + n + ' cached (synced ' + hh + ':' + mm + ')';
+  }
+  async function fetchRoster() {
+    if (!navigator.onLine) return;
+    try {
+      const res = await fetch(CONFIG.API_BASE + '?action=roster');
+      const json = await res.json();
+      if (json && json.status === 'SUCCESS' && Array.isArray(json.attendees)) {
+        const byCode = {};
+        json.attendees.forEach(function (a) {
+          if (a.attendance_code) byCode[String(a.attendance_code)] = a;
+        });
+        localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify({ byCode: byCode, syncedAt: new Date().toISOString() }));
+        updateRosterBadge();
+      }
+    } catch (err) {
+      // offline or endpoint unreachable — keep whatever cache is already there
+    }
+  }
+  window.addEventListener('online', fetchRoster);
+  setInterval(fetchRoster, CONFIG.ROSTER_REFRESH_INTERVAL_MS);
 
   // ---- Feedback layer: audio tones (Story 3.2.1) --------------------------------------
   let audioCtx = null;
@@ -281,6 +344,30 @@
         (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
         (data.initial_checkin_timestamp ? '<div><span class="first-seen">First checked in: ' + escapeHtml_(data.initial_checkin_timestamp) + '</span></div>' : '') +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
+    } else if (status === 'QUEUED_OFFLINE') {
+      // Roster-cache hit while offline (Story 3.4 mitigation): still shows the tier-colored
+      // card so a VIP is visually identifiable at the door even with no connection — the
+      // check-in write itself is queued and confirmed later on sync.
+      const tier = data.ticket_type || 'Regular Attendee';
+      const color = CONFIG.TIER_COLORS[tier] || CONFIG.TIER_COLORS['Regular Attendee'];
+      const suspectDup = data.checkin_status === 'Checked-In';
+      html =
+        '<div class="card' + (suspectDup ? ' duplicate' : '') + '"><div class="tier-bar' + (suspectDup ? ' duplicate-bar' : '') + '" style="' + (suspectDup ? '' : 'background:' + color) + '">' + escapeHtml_(tier) + '</div>' +
+        '<div class="body">' +
+        '<p class="msg" style="color:' + (suspectDup ? 'var(--amber)' : color) + '">' + (suspectDup ? 'MAY ALREADY BE CHECKED IN' : 'OFFLINE — QUEUED') + '</p>' +
+        '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
+        '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
+        (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
+        '<span class="offline-note">' + (suspectDup
+          ? 'Per the last roster sync this code was already checked in — verify with the printed roster before letting them through again.'
+          : 'No connection — identity is from the last cached roster sync. Check-in will be recorded once back online.') + '</span>' +
+        '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
+    } else if (status === 'QUEUED') {
+      html =
+        '<div class="card"><div class="body">' +
+        '<p class="msg" style="color:var(--amber);">OFFLINE — CODE NOT IN CACHE</p>' +
+        '<p class="sub">' + escapeHtml_(message || 'No connection and this code isn’t in the cached roster, so this attendee can’t be identified right now — including whether they’re VIP. Check the printed roster before letting them through.') + '</p>' +
+        '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else {
       html =
         '<div class="card error"><div class="body">' +
@@ -309,9 +396,19 @@
       // Network failure -> offline resilience (Story 3.4.1): queue and tell the usher
       // check-in will be confirmed once the connection returns, instead of blocking entry.
       queueOffline(payload);
-      flashScreen('amber');
-      playFeedbackTone('duplicate'); // neutral tone — not a hard error, not a confirmed success
-      showResultModal('QUEUED', {}, 'No connection — scan saved and will sync automatically. Let the attendee through and verify later if needed.');
+      const cached = lookupRoster(code);
+      if (cached) {
+        // Roster cache hit: identify the attendee (tier/name/table) even offline (mitigation
+        // for the "can't spot a VIP with no connection" gap).
+        const suspectDup = cached.checkin_status === 'Checked-In';
+        flashScreen(suspectDup ? 'amber' : 'green');
+        playFeedbackTone(suspectDup ? 'duplicate' : 'success');
+        showResultModal('QUEUED_OFFLINE', cached, null);
+      } else {
+        flashScreen('amber');
+        playFeedbackTone('duplicate'); // neutral tone — not a hard error, not a confirmed success
+        showResultModal('QUEUED', {}, null);
+      }
       return;
     }
 
@@ -355,7 +452,12 @@
 
   // ---- Camera scan core (Story 3.1) ----------------------------------------------------
   let scanLocked = false;
+  let cameraOn = false;
   const html5QrCode = new Html5Qrcode('reader');
+  const readerEl = document.getElementById('reader');
+  const readerPausedEl = document.getElementById('readerPaused');
+  const torchBtn = document.getElementById('torchBtn');
+  const cameraToggleBtn = document.getElementById('cameraToggleBtn');
 
   function onScanSuccess(decodedText) {
     if (scanLocked) return; // 2.0s scan-freeze debounce (Story 3.1.3)
@@ -365,32 +467,63 @@
     setTimeout(function () { scanLocked = false; }, CONFIG.SCAN_FREEZE_MS);
   }
 
-  html5QrCode.start(
-    { facingMode: 'environment' },
-    { fps: 10, qrbox: { width: 250, height: 250 } },
-    onScanSuccess,
-    function () { /* per-frame decode miss — expected constantly, ignore */ }
-  ).then(function () {
-    setupTorch();
-  }).catch(function (err) {
-    showResultModal('ERROR', {}, 'Camera unavailable (' + err + '). Use manual code entry instead.');
-    manualPanel.hidden = false;
+  function startCamera() {
+    return html5QrCode.start(
+      { facingMode: 'environment' },
+      { fps: 10, qrbox: { width: 250, height: 250 } },
+      onScanSuccess,
+      function () { /* per-frame decode miss — expected constantly, ignore */ }
+    ).then(function () {
+      cameraOn = true;
+      readerEl.hidden = false;
+      readerPausedEl.hidden = true;
+      cameraToggleBtn.textContent = '📷 Turn Camera Off';
+      setupTorch();
+    }).catch(function (err) {
+      cameraOn = false;
+      readerEl.hidden = true;
+      readerPausedEl.hidden = true;
+      cameraToggleBtn.textContent = '📷 Camera Off';
+      showResultModal('ERROR', {}, 'Camera unavailable (' + err + '). Use manual code entry instead.');
+      manualPanel.hidden = false;
+    });
+  }
+
+  // Story: battery-saving camera toggle — ushers doing mostly manual/offline entry, or taking
+  // a break from active scanning, can turn the camera off entirely rather than leaving it
+  // running (a live camera + continuous decode loop is one of the biggest battery drains on a
+  // phone left running for a multi-hour shift).
+  function stopCamera() {
+    return html5QrCode.stop().then(function () {
+      cameraOn = false;
+      readerEl.hidden = true;
+      readerPausedEl.hidden = false;
+      torchBtn.hidden = true;
+      cameraToggleBtn.textContent = '📷 Turn Camera On';
+    }).catch(function () { /* already stopped — nothing to do */ });
+  }
+
+  cameraToggleBtn.addEventListener('click', function () {
+    cameraToggleBtn.disabled = true;
+    const p = cameraOn ? stopCamera() : startCamera();
+    p.finally(function () { cameraToggleBtn.disabled = false; });
   });
+
+  startCamera();
 
   // ---- Flashlight toggle, feature-detected (Story 3.1.4) -------------------------------
   function setupTorch() {
-    const torchBtn = document.getElementById('torchBtn');
     let torchOn = false;
     try {
       const caps = html5QrCode.getRunningTrackCameraCapabilities();
       const torchFeature = caps && caps.torchFeature && caps.torchFeature();
       if (torchFeature && torchFeature.isSupported && torchFeature.isSupported()) {
         torchBtn.hidden = false;
-        torchBtn.addEventListener('click', function () {
+        torchBtn.onclick = function () {
           torchOn = !torchOn;
           torchFeature.apply(torchOn);
           torchBtn.style.background = torchOn ? '#F59E0B' : '#374151';
-        });
+        };
       }
     } catch (e) {
       // torch not supported on this device/browser — button stays hidden, no functional loss
@@ -399,7 +532,9 @@
 
   // ---- Init -----------------------------------------------------------------------------
   updateQueueUi();
+  updateRosterBadge();
   trySyncOfflineQueue();
+  fetchRoster();
 })();
 </script>
 </body>
