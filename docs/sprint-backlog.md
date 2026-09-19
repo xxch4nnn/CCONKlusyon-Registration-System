@@ -71,6 +71,8 @@ One pass, run once Epic 1 is fully built — not after each story above.
 **3.3 Story — Manual PIN fallback**
 - 3.3.1 Numeric field + Search/Validate button
 - 3.3.2 Tier-colored modal card (Gold/Blue) with name, designation, table/seat
+- 3.3.3 (spec §1.2A / §1.4) Search by surname/name when there is no PIN — **built 2026-09-20** (Code / Name toggle, cached roster, confirm step)
+- (added) Shared access key on every data endpoint — **built 2026-09-20**; live only after the roll-out in `HANDOFF.md`
 
 **3.4 Story — Offline resilience**
 - 3.4.1 localStorage.offline_scans write on fetch failure
@@ -107,7 +109,7 @@ Covers Epics 2 + 3 together, once both are built — this is the full attendee j
 
 ## 5. Epic: Projector Live Wall (D-5)
 
-**Status: BUILT (2026-09-19), layout verified with mocked data at 1080p/4K.** 5.1.x done in `display.html`; 5.2.1 error handling built in. Still to do on real hardware: 5.2.2 (30+ min heap watch) and 5.2.3 (real 1080p/4K projector output).
+**Status: BUILT (2026-09-19); reworked 2026-09-20 into three tabs — Spotlight (audience view, one attendee at a time, per Stage 2 §6.5), Recent (everyone, newest first, the earlier hero + grid) and Attendance (secretariat: checked in / expected, bar, VIP/Regular, per-club).** Layout verified with mocked data at 1080p. 5.1.x done in `display.html`; 5.2.1 error handling built in. The Attendance tab groups by club rather than Stage 2's org cluster (roster has no `org_classification`). Still to do on real hardware: 5.2.2 (30+ min heap watch), 5.2.3 (real 1080p/4K projector) and the spotlight timing/animation on a projector (6.2.6).
 
 **5.1 Story — Build the wall**
 - 5.1.1 Single-file display.html, poll GET /api/recent?limit=16 every 4000ms
@@ -170,7 +172,7 @@ This is the gate that matters most before you involve other people (Epic 6 is a 
 
 **7.3 Story — Production dispatch**
 - 7.3.1 Production email send to all ~300 attendees, throttled
-- 7.3.2 Print + laminate 2 copies of the master roster (D-6), stage at Usher Station 1
+- 7.3.2 Print + laminate 2 copies of the master roster (D-6), stage at Usher Station 1 — **tool built 2026-09-20** (`roster-print.html`, 27 automated checks, viewed against the live 10-row roster); the printing itself waits for the final ~300-row roster with seats, and a real test print
 
 ### 🔴 QA Gate 5 — Definition of Done / Production Send Go-No-Go
 

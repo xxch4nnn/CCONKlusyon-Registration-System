@@ -27,9 +27,17 @@ when it happens.
   - **Registration DB tab:** `Master_Attendance` (gid=155323925) — the only tab Claude may write to
     (via Apps Script the user deploys — Claude does not write to any Sheet directly).
   - All other tabs in that workbook (Event Checklist, etc.) are read-only reference for Claude.
-- **Telegram bot token / chat ID:** not yet provisioned (Epic 4 code is done and waiting on these).
-  Never enters chat — pasted directly into Apps Script Script Properties as `TELEGRAM_BOT_TOKEN` and
-  `TELEGRAM_CHAT_ID`. Verify with `testTelegramPing()` / `testVipAlertTemplate()` in the editor.
+- **Telegram bot token / chat ID:** provisioned by the user (Sept 20: alerts arrive in the VIP group; a test alert
+  round trip measured 474 ms). Never enters chat — lives only in Apps Script Script Properties as
+  `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Verify with `testTelegramPing()` / `testVipAlertTemplate()` in the editor.
+
+## Access key (added 2026-09-20 — every data request needs it)
+- Stored ONLY in the Script property `API_KEY` (run `generateAccessKey` in the editor to create one). **Never commit it, never paste it in chat.**
+- `check-in`, `sync`, `recent`, `roster` refuse without it (`UNAUTHORIZED`; `KEY_NOT_SET` when the server has none — fail closed). `ping` is open and
+  reports `secured` / `authorized`. Details: [`docs/api-contract.md`](./docs/api-contract.md).
+- Devices get it once via a private link ending `#key=…` (stored in `localStorage.cco_access_key`, then stripped from the address bar); the scanner also has
+  ⚙️ Settings → Access key. The three pages share one origin, so a laptop opened once covers the wall and the print page. Rotate by editing the property
+  and re-issuing links.
 
 ## Master_Attendance schema (confirmed live, 13 columns — supersedes the spec's idealized A-L layout)
 Deviation from spec: the spec describes columns A-L (`email, full_name, org_classification,
@@ -62,6 +70,7 @@ Full request/response shapes: [`docs/api-contract.md`](./docs/api-contract.md). 
 - `GET /api/recent?limit=N` — `{action:"recent"}` — feeds the projector wall
 - `GET ?action=checkin&attendance_code=&device_id=` — same as the POST check-in; the scanner's automatic retry
   when a POST comes back unusable. `GET ?action=ping` — no-op warm-up (see `docs/api-contract.md`)
+- All data endpoints here also need `key=…` (see **Access key**).
 - `GET /api/roster` — `{action:"roster"}` — full attendee list (no `email`), cached client-side by
   `scanner.html` for offline VIP identification (added post-Epic-3, see `CHANGES.md`)
 
@@ -75,14 +84,24 @@ Full request/response shapes: [`docs/api-contract.md`](./docs/api-contract.md). 
   vibration) + screen flash; per-device settings in `localStorage.cco_scanner_settings`. Camera can be
   toggled off (battery saving) without losing manual-entry function. All server calls go through
   `callApi()` (timeout + classification + **Settings → Connection log** for diagnosing a misbehaving
-  request from the phone); a check-in with no definitive reply is retried once via GET, then queued. No manifest/service worker (not
+  request from the phone); a check-in with no definitive reply is retried once via GET, then queued. A **rejected access key** is never
+  queued blindly: the card says "NOT RECORDED", the scan is kept, ⚙️ gets a red dot and a warning. **Name search:** the manual panel has a Code / Name
+  toggle; Name mode searches the cached roster (accents/punctuation/spacing ignored, word-start matches first, max 8 shown), asks to **confirm**, then runs the
+  normal check-in for that pass — works offline (spec §1.4). No manifest/service worker (not
   in the Epic 3 story list — app-level offline queue only, not full installability).
-- `display.html` — Projector Live Wall (Epic 5). Single file, no dependencies. Polls
+- `display.html` — Projector Live Wall (Epic 5). Single file, no dependencies. **Three tabs** (keys `1`/`2`/`3`; the tab bar and status header show only on tabs 2 and 3):
+  **Spotlight** (default, the audience view — no header or status wording; one attendee at a time, 5 s hold, VIP first, ambient welcome after 30 s quiet, never replays
+  people already checked in), **Recent** (everyone, newest first: hero of 3 + grid), and **Attendance** (secretariat: checked in / expected, bar, VIP vs Regular, not yet arrived, per-club breakdown — from the roster feed, no names or PINs). Polls
   `GET ?action=recent` every 4000 ms (first load pulls up to 300 so a mid-event start shows everyone,
   then `limit=16`) and `GET ?action=roster` every 20 s for the "N of total" counter. `CONFIG.API_BASE`
-  must match `scanner.html`. `CONFIG.SHOWCASE_MODE` (`monogram` | `typographic`) controls the
-  photo-less Regular Attendee fallback; VIP photos fall back to a monogram if the URL fails. A failed
+  must match `scanner.html`. `CONFIG.SHOWCASE_MODE` (`1` VIP-only spotlight | `2` regulars = name card | `3` regulars =
+  monogram; default 3) controls the photo-less Regular Attendee look; a VIP with no working photo gets a monogram. A failed
   poll keeps the last good data on screen and shows "Reconnecting…".
+
+- `roster-print.html` — Paper Failsafe Roster (D-6, task 7.3.2). Single file, no dependencies. One `GET ?action=roster`
+  (`CONFIG.API_BASE` must match `scanner.html`), rendered sorted by club then name with tick box, seat (0/blank → "—") and
+  PIN; VIPs marked in words for monochrome printing. All data goes in via `textContent`. Holds/stores no attendee data.
+  Print only after the final seat/PIN change; the printout lists every PIN, so it is confidential.
 
 ## Repo structure
 ```
@@ -93,6 +112,7 @@ HANDOFF.md              status snapshot for whoever picks the project up next
 README.md               overview + deploy steps
 scanner.html            Usher Scanner PWA (Epic 3) — root, so GitHub Pages serves it
 display.html            projector wall (Epic 5) — root, beside scanner.html
+roster-print.html       paper failsafe roster (D-6) — root, beside the other pages
 apps-script/
   Code.gs               backend gateway (paste into the workbook's bound Apps Script project)
   EmailBlaster.gs       entry-pass emails + generic blast engine
@@ -110,6 +130,7 @@ tests/
   code-gs.test.js       Code.gs against mocked Apps Script
   scanner/              scanner.html harness: cases/ (station preset) and fresh/ (nothing saved)
   display/              display.html (wall) harness + cases
+  print/                roster-print.html (paper roster) harness + cases
   camera.js, camera/    fake-camera decode test (scan only inside the frame) + MJPEG clips
   README.md             how to run the suite + manual curl/device checks
 ```

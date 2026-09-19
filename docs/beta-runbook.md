@@ -9,6 +9,7 @@ attendees' rows — and reset them between runs.
 | Step | How | Done when |
 |---|---|---|
 | Latest code deployed | Paste `apps-script/Code.gs` → **Deploy → Manage deployments → pencil → New version** (never "+ New deployment"). `scanner.html`/`display.html` `CONFIG.API_BASE` must match that URL. | `?action=ping` returns `pong` |
+| Access key | Follow the zero-downtime roll-out in `HANDOFF.md` item 0 (key set in Script properties → frontend pushed → each device given its `#key=…` link → keyed `Code.gs` deployed). Never put the key in chat groups you do not control or in the repo. | Each phone shows no red dot on ⚙️; `?action=ping&key=<KEY>` says `"authorized":true` |
 | Beta rows staged | Beta group rows in `Master_Attendance` with static PINs, tables, at least 2 VIP rows with photos | — |
 | Data audit | Editor → run **`auditRoster`** → read the execution log | `RESULT: READY (no errors)`; warnings understood |
 | Telegram | Script properties `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`; run `testTelegramPing` then `testVipAlertTemplate` | Message arrives; round trip logged |

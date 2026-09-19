@@ -8,6 +8,20 @@ Requests go to the deployment's `/exec` URL. `POST` bodies are JSON sent as the 
 (the scanner uses `fetch(url, { method: 'POST', body: JSON.stringify(...) })` with no custom
 headers, which avoids a CORS preflight). Every response is JSON with a `status` field.
 
+## Access key (required on every data endpoint)
+
+`check-in` (POST and GET), `sync`, `recent` and `roster` need the shared access key: send it as `key=…` in the query string, or as `"key"`
+in a POST body. `ping` is open. The key lives only in the Script property `API_KEY` (create it with `generateAccessKey` in the editor) and is
+never committed. **Fail closed:** with no `API_KEY` set, the data endpoints refuse.
+
+| Situation | Response |
+|---|---|
+| Key missing or wrong | `{ "status": "ERROR", "code": "UNAUTHORIZED", "message": "Access key missing or wrong." }` — nothing is read or written |
+| Server has no `API_KEY` | `{ "status": "ERROR", "code": "KEY_NOT_SET", "message": "The server has no access key set (Script property API_KEY)." }` |
+
+Devices receive the key once through a private link ending in `#key=…` (the page stores it and removes it from the address bar) or, on the
+scanner, by pasting it in ⚙️ Settings → Access key. The key is not logged by the script or the scanner's Connection log.
+
 ## `POST` `{action:"checkin"}`
 
 Request: `{ "action": "checkin", "attendance_code": "12345", "device_id": "Entrance-1" }`
@@ -54,8 +68,9 @@ Response: `{ "status": "SUCCESS", "count": n, "attendees": [ { attendance_code, 
 
 ## `GET ?action=ping` (also accepted via POST)
 
-No sheet access. Response: `{ "status": "SUCCESS", "message": "pong", "ts": "<ISO time>" }`. The scanner calls it on
-load to warm the Apps Script container and to log a round trip.
+No sheet access, no key needed. Response: `{ "status": "SUCCESS", "message": "pong", "version": "…", "secured": true, "authorized": true, "ts": "<ISO time>" }`.
+`secured` = the server has an access key; `authorized` = the `key` sent with this ping is the right one (so a device can check its key without
+touching data). The scanner calls it on load to warm the container, log a round trip, and check the version and the key.
 
 ## Gotchas
 

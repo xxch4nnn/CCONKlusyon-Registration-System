@@ -151,7 +151,24 @@
   .btn.secondary { background: #374151; }
   .btn.primary { background: var(--blue); }
   .btn:disabled { opacity: .55; }
-  #manualPanel { display: flex; gap: 10px; animation: rise .25s var(--ease); }
+  #manualPanel { display: flex; flex-direction: column; gap: 8px; animation: rise .25s var(--ease); }
+  .manual-row { display: flex; gap: 10px; }
+  #modeToggle { flex: 0 0 auto; width: 54px; border-radius: 12px; background: #374151; font-weight: 800; font-size: 16px; }
+  #manualCode.name-mode { font-size: 18px; letter-spacing: 0; text-align: left; }
+  #nameResults { max-height: 34dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
+  button.nr { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; text-align: left; padding: 10px 12px;
+    border-radius: 12px; border: 1px solid #374151; background: var(--bg); color: var(--text); }
+  .nr .n, .nc .n { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
+  .nr .s, .nc .s { font-size: 12px; color: var(--muted); }
+  .nr .s { grid-column: 1; }
+  .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #374151; color: #E5E7EB; white-space: nowrap; }
+  .tag.vip { background: #7A5A06; color: #FDE68A; }
+  .tag.in { background: #78350F; color: #FDE68A; }
+  .nmsg { font-size: 12px; color: var(--muted); padding: 6px 4px; }
+  .nc { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; border: 1px solid #374151; background: var(--bg); }
+  .nc .n { font-size: 20px; }
+  .nc .warn { font-size: 12px; color: #FCD34D; }
+  .nc .actions { display: grid; grid-template-columns: 1fr 1.6fr; gap: 10px; margin-top: 4px; }
   @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   #manualCode { flex: 1; min-width: 0; font-size: 22px; letter-spacing: 4px; padding: 12px; border-radius: 12px;
     border: 1px solid #374151; background: var(--bg); color: var(--text); text-align: center; }
@@ -242,6 +259,9 @@
   #menuBtn.attn::after { content: ''; position: absolute; top: 3px; right: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--red); border: 2px solid var(--panel); }
   .warn-box { background: #7F1D1D; color: #FECACA; border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45; margin: 0 0 10px; }
   .tiny { color: var(--muted); font-size: 11px; margin-top: 10px; word-break: break-all; }
+  .keyrow { display: flex; gap: 8px; }
+  .keyrow input { flex: 1; min-width: 0; padding: 12px; border-radius: 12px; border: 1px solid #374151; background: var(--bg); color: var(--text); }
+  .keyrow .btn { flex: 0 0 auto; padding: 0 18px; background: var(--blue); }
   #diagLog { max-height: 34dvh; overflow: auto; margin: 8px 0; padding: 8px; border-radius: 8px; background: var(--bg);
     color: #C7CEDA; font: 10.5px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
 </style>
@@ -262,7 +282,7 @@
     <div id="reader"></div>
     <div id="readerPaused" hidden>
       <div class="big">📷</div>
-      <div>Camera paused to save battery.<br>Tap <b>Camera on</b> or use <b>Enter code</b>.</div>
+      <div>Camera paused to save battery.<br>Tap <b>Camera on</b> or use <b>Code / name</b>.</div>
     </div>
     <div id="reticle" class="reticle" aria-hidden="true">
       <div class="mask"></div><i></i><i></i><i></i><i></i><span class="scanline"></span>
@@ -276,8 +296,12 @@
 
   <footer id="dock">
     <div id="manualPanel" hidden>
-      <input id="manualCode" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="5-digit code" autocomplete="off">
-      <button id="manualSubmit">Validate</button>
+      <div id="nameResults" hidden></div>
+      <div class="manual-row">
+        <button id="modeToggle" type="button" aria-label="Switch between code entry and name search" aria-pressed="false">Aa</button>
+        <input id="manualCode" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="5-digit code" autocomplete="off">
+        <button id="manualSubmit">Validate</button>
+      </div>
     </div>
     <label id="continuousLabel" class="switch-row">
       <span>Keep scanning while a result card is showing
@@ -286,7 +310,7 @@
     </label>
     <div class="dock-actions">
       <button id="cameraToggleBtn" class="btn secondary">📷 Camera off</button>
-      <button id="manualBtn" class="btn primary">⌨️ Enter code</button>
+      <button id="manualBtn" class="btn primary">⌨️ Code / name</button>
     </div>
   </footer>
 </div>
@@ -327,6 +351,15 @@
     <span>Auto-dismiss result cards<small>Successful check-ins close themselves (VIPs stay longer)</small></span>
     <input type="checkbox" class="switch" role="switch" id="autoDismissToggle">
   </label>
+  <div id="keyWarn" class="warn-box" role="alert" hidden></div>
+  <div class="setting">
+    <div class="label">Access key</div>
+    <div class="keyrow">
+      <input id="keyInput" type="password" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="Paste the access key">
+      <button class="btn" id="keySaveBtn" type="button">Save</button>
+    </div>
+    <div class="tiny" id="keyNote"></div>
+  </div>
   <div class="setting">
     <div class="sheet-actions">
       <button class="btn wide" id="testFeedbackBtn">🔔 Test sound &amp; vibration</button>
@@ -380,6 +413,7 @@
     DEVICE_ID_KEY: 'cco_device_id',
     OFFLINE_QUEUE_KEY: 'cco_offline_scans',
     ROSTER_CACHE_KEY: 'cco_roster_cache',
+    KEY_STORAGE: 'cco_access_key',
     SETTINGS_KEY: 'cco_scanner_settings',
     DIAG_KEY: 'cco_diag',
     DIAG_MAX: 40,                // entries kept in the connection log
@@ -516,7 +550,47 @@
     pre.textContent = d.length ? d.slice().reverse().map(fmtDiag).join('\n') : 'No requests logged yet.';
   }
 
+  // ---- Shared access key ---------------------------------------------------------------------------------
+  // Every data request carries the device's key (Code.gs refuses without it). It arrives once through a private link that
+  // ends in #key=… (stored, then removed from the address bar) or is pasted in Settings. It is never logged or shown in full.
+  let keyState = 'unknown'; // 'unknown' | 'ok' | 'missing' (none on this device) | 'rejected' | 'unset' (the server has none)
+  const KEY_WARN = {
+    missing: '⚠ No access key on this device. Open the scanner link you were given (it ends in #key=…) or paste the key below.',
+    rejected: '⚠ The server rejected this device’s access key. Check it with your tech lead and paste the right one below.',
+    unset: '⚠ The server has no access key set. In Apps Script run generateAccessKey (or add the Script property API_KEY), then redeploy.'
+  };
+  function getKey() { try { return localStorage.getItem(CONFIG.KEY_STORAGE) || ''; } catch (e) { return ''; } }
+  function setKey(k) {
+    try { if (k) localStorage.setItem(CONFIG.KEY_STORAGE, k); else localStorage.removeItem(CONFIG.KEY_STORAGE); } catch (e) { /* storage blocked */ }
+  }
+  function adoptKeyFromLink() {
+    const m = /[#&]key=([^&]+)/.exec(location.hash || '');
+    if (!m) return false;
+    try { setKey(decodeURIComponent(m[1])); } catch (e) { setKey(m[1]); }
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+    return true;
+  }
+  function keyBad() { return keyState === 'missing' || keyState === 'rejected' || keyState === 'unset'; }
+  function renderAttention() { $('menuBtn').classList.toggle('attn', backendState === 'outdated' || keyBad()); }
+  function renderKey() {
+    $('keyWarn').hidden = !keyBad();
+    $('keyWarn').textContent = KEY_WARN[keyState] || '';
+    const k = getKey();
+    $('keyNote').textContent = k ? 'Key saved on this device (ends …' + k.slice(-4) + ')' : 'No key on this device';
+    renderAttention();
+  }
+  function noteKeyDenied(code) { keyState = code === 'KEY_NOT_SET' ? 'unset' : (getKey() ? 'rejected' : 'missing'); renderKey(); }
+  function noteKeyOk() { if (keyState !== 'ok') { keyState = 'ok'; renderKey(); } }
+
   async function callApi(label, url, init) {
+    const key = getKey();
+    if (key) {
+      if (init && typeof init.body === 'string') {
+        try { init = Object.assign({}, init, { body: JSON.stringify(Object.assign(JSON.parse(init.body), { key: key })) }); } catch (e) { /* not JSON: send as is */ }
+      } else {
+        url += (url.indexOf('?') < 0 ? '?' : '&') + 'key=' + encodeURIComponent(key);
+      }
+    }
     const t0 = performance.now();
     const ctrl = new AbortController();
     const timer = setTimeout(function () { ctrl.abort(); }, CONFIG.REQUEST_TIMEOUT_MS);
@@ -535,7 +609,10 @@
         // Only the message of an ERROR is logged — never attendee data (names) from a success body.
         if (json.status === 'ERROR') entry.note = json.message;
         diagLog(entry);
-        return { type: 'json', json: json };
+        const denied = json.status === 'ERROR' && (json.code === 'UNAUTHORIZED' || json.code === 'KEY_NOT_SET');
+        if (denied) noteKeyDenied(json.code);
+        else if (json.status && json.status !== 'ERROR' && label !== 'ping GET') noteKeyOk(); // a real answer proves the key works
+        return { type: 'json', json: json, keyDenied: denied };
       }
       entry.outcome = 'NOT-JSON';
       entry.note = text.replace(/\s+/g, ' ').slice(0, 90);
@@ -564,15 +641,20 @@
   // deployment, so only a *reachable* server that doesn't know `ping` counts as outdated.
   let backendState = 'unknown', backendVersion = null; // 'unknown' | 'ok' | 'outdated'
   function renderBackend() {
-    $('menuBtn').classList.toggle('attn', backendState === 'outdated');
+    renderAttention();
     $('backendWarn').hidden = backendState !== 'outdated';
     $('apiNote').textContent = 'API …' + CONFIG.API_BASE.slice(-18) + ' · ' +
       (backendState === 'ok' ? 'backend ' + backendVersion : backendState === 'outdated' ? 'backend OUTDATED' : 'backend not checked');
   }
   async function checkBackend() {
     const r = await callApi('ping GET', CONFIG.API_BASE + '?action=ping');
-    if (r.type === 'json' && r.json.status === 'SUCCESS' && r.json.message === 'pong') { backendState = 'ok'; backendVersion = r.json.version || '?'; }
+    // A pong without `version` comes from a script older than the version marker: it is stale too.
+    if (r.type === 'json' && r.json.status === 'SUCCESS' && r.json.message === 'pong' && r.json.version) { backendState = 'ok'; backendVersion = r.json.version; }
     else if (r.type === 'json') { backendState = 'outdated'; backendVersion = null; }
+    if (r.type === 'json' && r.json.message === 'pong' && typeof r.json.secured === 'boolean') { // ping is open and says whether our key is right
+      keyState = !r.json.secured ? 'unset' : !getKey() ? 'missing' : r.json.authorized ? 'ok' : 'rejected';
+      renderKey();
+    }
     renderBackend();
     return backendState;
   }
@@ -618,6 +700,7 @@
         body: JSON.stringify({ action: 'sync', items: q })
       });
       if (r.type === 'network') return null; // still offline — leave the queue intact
+      if (r.keyDenied) return null; // the key must be fixed first; the queue stays exactly as it is
       let keep;
       if (r.type === 'json' && r.json.status === 'SUCCESS') {
         const results = Array.isArray(r.json.results) ? r.json.results : null;
@@ -631,7 +714,7 @@
           if (tried >= CONFIG.SYNC_FALLBACK_MAX) { keep.push(q[i]); continue; }
           tried++;
           const g = await callApi('sync item GET', checkinUrl(q[i].attendance_code, q[i].device_id));
-          if (g.type === 'network') { keep.push.apply(keep, q.slice(i)); break; }
+          if (g.type === 'network' || g.keyDenied) { keep.push.apply(keep, q.slice(i)); break; }
           if (!isDefinitive(g)) keep.push(q[i]);
         }
       }
@@ -675,6 +758,12 @@
   async function fetchRoster() {
     if (!navigator.onLine) return 'offline';
     const r = await callApi('roster GET', CONFIG.API_BASE + '?action=roster');
+    if (r.keyDenied) {
+      const el = $('rosterBadge');
+      el.textContent = '👥 🔑 key?';
+      el.classList.add('attn');
+      return 'key';
+    }
     if (r.type === 'json' && r.json.status === 'SUCCESS' && Array.isArray(r.json.attendees)) {
       const byCode = {};
       r.json.attendees.forEach(function (a) {
@@ -899,6 +988,14 @@
         codeLine +
         '<p class="sub">' + escapeHtml_(message || 'No connection and this code isn’t in the cached roster, so this attendee can’t be identified right now — including whether they’re VIP. Check the printed roster before letting them through.') + '</p>' +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
+    } else if (status === 'KEY') {
+      html =
+        '<div class="card error"><div class="body">' +
+        '<p class="msg" style="color:#DC2626;">ACCESS KEY PROBLEM</p>' +
+        (data.full_name ? '<p class="name">' + escapeHtml_(data.full_name) + '</p>' : '') +
+        codeLine +
+        '<p class="sub">This check-in is NOT RECORDED yet. It is saved on this phone and will be recorded as soon as the key is fixed: ⚙️ Settings → Access key.</p>' +
+        '</div><button class="close" onclick="cco_closeModal()">OK</button></div>';
     } else {
       html =
         '<div class="card error"><div class="body">' +
@@ -957,6 +1054,7 @@
     const startedAt = Date.now();
     let r = await callApi('checkin POST', CONFIG.API_BASE, { method: 'POST', body: JSON.stringify(payload) });
     if (r.type === 'network') return handleUnconfirmed(code, payload, 'offline');
+    if (r.keyDenied) return handleKeyDenied(code, payload); // a retry would only be refused again
 
     let ambiguous = false; // true when the first attempt might have written to the sheet before failing
     if (!isDefinitive(r)) {
@@ -966,6 +1064,7 @@
       if (r.type === 'json' && /busy/i.test(r.json.message || '')) await sleep(600);
       r = await callApi('checkin GET retry', checkinUrl(code));
       if (r.type === 'network') return handleUnconfirmed(code, payload, 'offline');
+      if (r.keyDenied) return handleKeyDenied(code, payload);
       if (!isDefinitive(r)) return handleUnconfirmed(code, payload, 'server');
     }
 
@@ -1022,6 +1121,16 @@
     }
   }
 
+  // The server refused this device's key: the check-in did NOT happen. Keep the scan (it syncs once the key is fixed)
+  // and say so plainly — never let an usher believe it will sync by itself.
+  function handleKeyDenied(code, payload) {
+    queueOffline(payload);
+    flashScreen('red');
+    reactReticle('err');
+    feedback('error');
+    showResultModal('KEY', Object.assign({}, lookupRoster(code) || {}, { _code: code }), null);
+  }
+
   function renderCheckinResult(json, code) {
     if (json.status === 'SUCCESS') {
       const vip = json.data && json.data.ticket_type === 'VIP Pass';
@@ -1049,7 +1158,7 @@
   const manualCode = $('manualCode');
   manualBtn.addEventListener('click', function () {
     manualPanel.hidden = !manualPanel.hidden;
-    manualBtn.textContent = manualPanel.hidden ? '⌨️ Enter code' : '✕ Close keypad';
+    manualBtn.textContent = manualPanel.hidden ? '⌨️ Code / name' : '✕ Close keypad';
     if (!manualPanel.hidden) manualCode.focus();
   });
   $('manualSubmit').addEventListener('click', function () {
@@ -1059,8 +1168,104 @@
     submitCheckin(code);
     manualCode.value = '';
   });
+
+  // ---- Name search: a guest with a dead phone can't read out a PIN, so find them by name in the cached roster --------
+  // Code mode is untouched. Name mode matches every typed word against the name (accents, punctuation and spacing ignored,
+  // word-start matches first), and a pick is CONFIRMED before the ordinary check-in runs — a stray tap must not check the
+  // wrong person in. It uses only the roster already cached on the phone, so it works offline too.
+  const nameResults = $('nameResults'), modeToggle = $('modeToggle');
+  let nameMode = false;
+  const NAME_MAX_ROWS = 8;
+  function fold(v) { return String(v == null ? '' : v).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase(); }
+  function clearNamePanel() { manualCode.value = ''; nameResults.hidden = true; nameResults.textContent = ''; }
+  function setNameMode(on) {
+    nameMode = !!on;
+    manualCode.type = nameMode ? 'text' : 'tel';
+    manualCode.inputMode = nameMode ? 'text' : 'numeric';
+    if (nameMode) { manualCode.removeAttribute('maxlength'); manualCode.removeAttribute('pattern'); manualCode.placeholder = 'Type a surname or name'; }
+    else { manualCode.setAttribute('maxlength', '5'); manualCode.setAttribute('pattern', '[0-9]*'); manualCode.placeholder = '5-digit code'; }
+    manualCode.classList.toggle('name-mode', nameMode);
+    $('manualSubmit').hidden = nameMode;
+    modeToggle.textContent = nameMode ? '123' : 'Aa';
+    modeToggle.setAttribute('aria-pressed', String(nameMode));
+    clearNamePanel();
+    manualCode.focus();
+  }
+  modeToggle.addEventListener('click', function () { setNameMode(!nameMode); });
+
+  // Returns null when this phone has no roster yet, otherwise the matching attendees (best first).
+  function searchRoster(query) {
+    const cache = readRosterCache();
+    if (!cache || !cache.byCode) return null;
+    const tokens = fold(query).split(/[^a-z0-9]+/).filter(function (t) { return t.length >= 2; });
+    if (!tokens.length) return [];
+    const out = [];
+    Object.keys(cache.byCode).forEach(function (code) {
+      const a = cache.byCode[code];
+      const name = fold(a.full_name);
+      const compact = name.replace(/[^a-z0-9]+/g, '');
+      if (!tokens.every(function (t) { return compact.indexOf(t) >= 0; })) return;
+      const words = name.split(/[^a-z0-9]+/);
+      const wordStart = tokens.every(function (t) { return words.some(function (w) { return w.indexOf(t) === 0; }); });
+      out.push({ a: a, rank: wordStart ? 0 : 1 });
+    });
+    out.sort(function (x, y) { return x.rank - y.rank || String(x.a.full_name).localeCompare(String(y.a.full_name)); });
+    return out.map(function (x) { return x.a; });
+  }
+  function nEl(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
+  function tagsFor(a) {
+    const t = [];
+    if (a.ticket_type === 'VIP Pass') t.push(nEl('span', 'tag vip', '⭐ VIP'));
+    if (a.checkin_status === 'Checked-In') t.push(nEl('span', 'tag in', '✓ checked in'));
+    return t;
+  }
+  function showNameMessage(text) { nameResults.textContent = ''; nameResults.appendChild(nEl('div', 'nmsg', text)); nameResults.hidden = false; }
+  function renderNameResults() {
+    const q = manualCode.value.trim();
+    nameResults.textContent = '';
+    if (!q) { nameResults.hidden = true; return; }
+    if (q.length < 2) { showNameMessage('Keep typing…'); return; }
+    const list = searchRoster(q);
+    if (list === null) { showNameMessage('No roster on this phone yet — connect, then tap ⚙️ → Refresh roster.'); return; }
+    if (!list.length) { showNameMessage('No match. Try another spelling, or use the printed roster.'); return; }
+    list.slice(0, NAME_MAX_ROWS).forEach(function (a) {
+      const b = nEl('button', 'nr'); b.type = 'button';
+      b.appendChild(nEl('span', 'n', a.full_name || ''));
+      const tags = nEl('span'); tagsFor(a).forEach(function (t) { tags.appendChild(t); }); b.appendChild(tags);
+      b.appendChild(nEl('span', 's', [a.designation, a.club_name].filter(Boolean).join(' · ')));
+      b.addEventListener('click', function () { showNameConfirm(a); });
+      nameResults.appendChild(b);
+    });
+    if (list.length > NAME_MAX_ROWS) nameResults.appendChild(nEl('div', 'nmsg', (list.length - NAME_MAX_ROWS) + ' more — keep typing to narrow it down.'));
+    nameResults.hidden = false;
+  }
+  function showNameConfirm(a) {
+    nameResults.textContent = '';
+    const box = nEl('div', 'nc'); box.id = 'nameConfirm';
+    box.appendChild(nEl('div', 'n', a.full_name || ''));
+    box.appendChild(nEl('div', 's', [a.designation, a.club_name].filter(Boolean).join(' · ')));
+    if (seatOf(a.table_allocation)) box.appendChild(nEl('div', 's', 'Table/Seat: ' + seatOf(a.table_allocation)));
+    const tags = nEl('div'); tagsFor(a).forEach(function (t) { tags.appendChild(t); }); box.appendChild(tags);
+    if (a.checkin_status === 'Checked-In') box.appendChild(nEl('div', 'warn', 'This phone’s roster says they already checked in. The server will confirm.'));
+    const actions = nEl('div', 'actions');
+    const back = nEl('button', 'btn secondary', '← Back'); back.type = 'button'; back.id = 'nameBack';
+    const go = nEl('button', 'btn primary', '✓ Check in'); go.type = 'button'; go.id = 'nameGo';
+    back.addEventListener('click', renderNameResults);
+    go.addEventListener('click', function () {
+      ensureAudioCtx();
+      const code = String(a.attendance_code);
+      clearNamePanel();
+      submitCheckin(code);
+    });
+    actions.appendChild(back); actions.appendChild(go); box.appendChild(actions);
+    nameResults.appendChild(box);
+    nameResults.hidden = false;
+  }
+  manualCode.addEventListener('input', function () { if (nameMode) renderNameResults(); });
   manualCode.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') $('manualSubmit').click();
+    if (e.key !== 'Enter') return;
+    if (nameMode) { const rows = nameResults.querySelectorAll('button.nr'); if (rows.length === 1) rows[0].click(); }
+    else $('manualSubmit').click();
   });
 
   // ---- Camera scan core (Story 3.1) ----------------------------------------------------
@@ -1213,7 +1418,7 @@
       setupTorch();
     }).catch(function (err) {
       setCameraUi(false);
-      readerPausedEl.querySelector('div:last-child').innerHTML = 'Camera unavailable.<br>Use <b>Enter code</b> to check people in.';
+      readerPausedEl.querySelector('div:last-child').innerHTML = 'Camera unavailable.<br>Use <b>Code / name</b> to check people in.';
       cameraToggleBtn.textContent = '📷 Retry camera';
       showResultModal('ERROR', {}, 'Camera unavailable (' + err + '). Use manual code entry instead.');
       manualPanel.hidden = false;
@@ -1228,7 +1433,7 @@
   function stopCamera() {
     return html5QrCode.stop().then(function () {
       setCameraUi(false);
-      readerPausedEl.querySelector('div:last-child').innerHTML = 'Camera paused to save battery.<br>Tap <b>Camera on</b> or use <b>Enter code</b>.';
+      readerPausedEl.querySelector('div:last-child').innerHTML = 'Camera paused to save battery.<br>Tap <b>Camera on</b> or use <b>Code / name</b>.';
     }).catch(function () { /* already stopped — nothing to do */ });
   }
 
@@ -1313,7 +1518,7 @@
     checkBackend();
     btn.disabled = false; btn.textContent = '🔄 Refresh roster';
     const n = Object.keys((readRosterCache() || {}).byCode || {}).length;
-    showToast(r === 'ok' ? 'Roster refreshed — ' + n + ' cached' : r === 'unsupported' ? 'Server has no roster endpoint — redeploy Code.gs' : 'Offline — using cached roster');
+    showToast(r === 'ok' ? 'Roster refreshed — ' + n + ' cached' : r === 'unsupported' ? 'Server has no roster endpoint — redeploy Code.gs' : r === 'key' ? 'Access key problem — see the warning in Settings' : 'Offline — using cached roster');
   });
   $('syncNowBtn').addEventListener('click', async function () {
     const btn = this;
@@ -1344,11 +1549,23 @@
       showToast('Select & copy the highlighted log');
     }
   });
+  $('keySaveBtn').addEventListener('click', function () {
+    const v = $('keyInput').value.trim();
+    if (!v) { showToast('Paste the access key first'); return; }
+    setKey(v);
+    $('keyInput').value = '';
+    keyState = 'unknown';
+    renderKey();
+    showToast('Key saved — checking…');
+    checkBackend(); fetchRoster(); trySyncOfflineQueue();
+  });
   renderBackend();
 
   // ---- Init -----------------------------------------------------------------------------
   reticleEl.hidden = true; hintEl.hidden = true; // shown once the camera actually starts
   cameraToggleBtn.textContent = '📷 Starting…';
+  adoptKeyFromLink(); // a private #key=… link is stored before the first request goes out
+  renderKey();
   updateQueueUi();
   updateRosterBadge();
   checkBackend(); // warms the container and shows whether the deployed script is current

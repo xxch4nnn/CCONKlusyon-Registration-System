@@ -26,27 +26,29 @@ is only the top-level status snapshot.
 - **Epic 4 — Telegram VIP Alert** (`apps-script/Code.gs`). Code complete: real `sendMessage` call with
   the spec's template, sent after the script lock is released, failures logged not thrown. **Blocked
   on credentials** — see "Do next" below.
-- **Epic 5 — Projector Wall** (`display.html`, repo root). Built to spec (4 s polling, hero + grid,
-  Gold/Blue cards, monogram/typographic fallbacks, reconnect state). Layout verified with mocked
-  data at 1080p and 4K; not yet run against the live sheet on a projector.
+- **Epic 5 — Projector Wall** (`display.html`, repo root). Three tabs since 2026-09-20: **Spotlight** (audience view, one attendee at a
+  time — Stage 2 §6.5), **Recent** (everyone, newest first) and **Attendance** (secretariat: counts, bar, per-club). 4 s polling, Gold/Blue cards, `SHOWCASE_MODE` 1|2|3,
+  reconnect state. Layout verified with mocked data at 1080p; not yet run against the live sheet on a projector.
+  The Attendance tab groups by club, not Stage 2's org cluster (the roster has no `org_classification`). `MAX_TILES` is 400, not Stage 2's ≤32 (Recent lists everyone) — see `CHANGES.md`.
 
 ## Do next (user-side — nothing here can be done from a Claude session)
 
-0. **URGENT — move the deployment to a NEW version.** Manage deployments still showed Version 4 (Sep 19 5:08 PM) on 2026-09-20. Deploy → Manage deployments → ✏️ → Version: **New version** → Deploy;
-   it must then say Version 5+ dated today. The scanner now shows a red dot on ⚙️ until `ping` reports a version. Full backlog audit: `docs/audit-2026-09-20.md`.
-0. **(older note) the live server is still the OLD `Code.gs`** (`?action=ping` → "Unknown action." on 2026-09-19). Until it is redeployed the scanner's GET retry
-   and lost-reply recovery can't work and "unconfirmed" cards keep appearing. Then, after a bad run, **Settings → Connection log → Copy** and send it.
-0. **Redeploy `Code.gs`** (adds `auditRoster`, `resetTestCheckins`, GET check-in, `ping`), then run `auditRoster` in the editor and
-   fix any ERRORS. Then follow `docs/beta-runbook.md` (Epic 6) once Telegram is provisioned.
+0. **ACCESS-KEY ROLL-OUT — zero downtime, in exactly this order.** (The live Version 6 ignores an extra `key` parameter — checked against the live URL — so devices can hold the key BEFORE the server starts enforcing it.
+   Deploying the keyed backend first would lock every device out until they were all updated.)
+   1. **Make the key.** Apps Script → Project settings → Script properties → add `API_KEY` = a long random string (24+ letters/digits, e.g. from a password manager). Adding a property needs no redeploy and Version 6 ignores it.
+      **Never paste it in chat or the repo.** (`generateAccessKey` in the new `Code.gs` does the same job, but it isn't deployed yet.)
+   2. **Push the frontend** to GitHub Pages (commit + push `scanner.html`, `display.html`, `roster-print.html` — ask Claude). Nothing changes for users yet: with no key stored the new pages send none.
+   3. **Give each device its private link:** `<your Pages address>/scanner.html#key=<KEY>` for each phone; `…/display.html#key=<KEY>` once on the Secretariat laptop (the print page shares that laptop's storage). Everything keeps working —
+      the pages now send the key and Version 6 simply ignores it. Delete the messages afterwards.
+   4. **Then enforce it:** paste the current `apps-script/Code.gs` (`BACKEND_VERSION 2026-09-20.2`) → Deploy → Manage deployments → ✏️ → Version: **New version** → Deploy. Open `…/exec?action=ping&key=<KEY>` — it must show
+      `"version":"2026-09-20.2"`, `"secured":true`, `"authorized":true`. Every device already holds the key, so the switch is invisible.
+   5. **Check:** no red dot on ⚙️ on any phone; Settings → Access key shows "ends …xxxx"; the wall says "Live"; `?action=roster` without a key now returns `UNAUTHORIZED`. A phone with a wrong/missing key says so plainly and keeps its scans.
+   To rotate (e.g. after the event): edit the `API_KEY` property and re-issue links — no redeploy needed.
+0. **NOTHING FROM TONIGHT'S FRONTEND WORK IS PUSHED** (three-tab wall, audience view, Attendance tab, name search, access key). GitHub Pages serves the old pages until step 2 above.
+0. **Operator note for the wall:** open `display.html` on the Secretariat laptop, F11, leave it on tab **1** (audience view, clean); press **2** for the Recent list, **3** for the Attendance (secretariat) view, **1** to go back to the audience view.
+   After a bad run: **Settings → Connection log → Copy** and send it. For any future `Code.gs` change: paste it, then **Deploy → Manage deployments → ✏️ → Version: New version → Deploy** — never "+ New deployment"; bump `BACKEND_VERSION` and confirm `?action=ping`.
 
-1. **Redeploy `Code.gs`**: paste `apps-script/Code.gs` into the Apps Script project, then
-   **Deploy → Manage deployments → pencil/edit → Version: New version → Deploy**. (Never "+ New
-   deployment" — it mints a new URL and strands `scanner.html`/`display.html`. See `AGENTS.md`.)
-2. **Provision Telegram** (Story 4.1.1): create a bot via @BotFather, add it to the usher leadership
-   group as admin, get the group's `chat_id`, and paste both into **Project Settings → Script
-   properties** as `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Never paste them into chat or the repo.
-3. In the editor run `testTelegramPing()`, then `testVipAlertTemplate()` (logs round-trip ms), then
-   check in a VIP test row from the scanner and time the alert (target ≤ 3 s).
+1. Telegram is provisioned and alerts arrive (Story 4.1.1 ✅). **Still to do (4.1.4):** check in a VIP test row from the scanner and time the alert with `vipAlertReport` (target ≤ 3 s).
 4. **Device-test the new scanner** on real phones: camera still decodes with the full-screen preview,
    audio is loud enough, vibration works (Android), the switch/buttons fit on your smallest phone.
 5. **Open `display.html`** on the Secretariat laptop (F11) and check a few rows in from the scanner —
@@ -55,21 +57,25 @@ is only the top-level status snapshot.
 
 ## Open items
 
+- **D-6 paper roster built (2026-09-20)**: `roster-print.html` (see `CHANGES.md`). Still to do: a real test print with the final ~300-row roster, then 2 copies at Usher Station 1 / the Secretariat desk.
+- **Public PIN list — resolved (2026-09-20):** every data endpoint now needs the shared access key (see item 0 and `CHANGES.md`). Residual: anyone with the key or a keyed device can still read the roster; rotate `API_KEY` after the event. Not enforced on the live server until step 4 of the roll-out.
+- **Name search** on the scanner (spec §1.4) is built and tested; device-test it with a dead-phone case (test 6.2.4 in the runbook).
+
 - **QA Gate 2: passed with waiver** (iOS deferred). New device reports were fixed test-first and **all need a phone/laptop retest**: BUG-003/004 (phantom pop-ups),
   BUG-007 (station gate — clear site data, it must appear before the camera), BUG-008 (only scans inside the frame), BUG-009 (pass code on cards, "Checking…" chip),
   BUG-010/011 (wall: one card per person, survives refresh). See `docs/bug-log.md`. Run `node tests/run.js` and `node tests/camera.js` before any push.
-- **Epic 4 is not closed**: code done, but 4.1.1/4.1.4 unverified and the deployed script is old.
+- **Epic 4 is not closed**: code done and deployed (Version 6), Telegram works (4.1.1 ✅); 4.1.4 (a timed VIP alert through the deployed web app) is still unmeasured.
 - **"Unknown action." on the first scan — mitigated, root cause unproven.** Hardening + a Connection log
-  shipped (see the Sept 19 `CHANGES.md` entry). Needs: redeploy `Code.gs`, then the 10-scan trial in
-  `tests/README.md`. If the log confirms a POST→GET downgrade, flip check-in to GET-primary.
+  shipped (see the Sept 19 `CHANGES.md` entry). Needs: the 10-scan trial in
+  `tests/README.md` against the now-current deployment (Version 6). If the log confirms a POST→GET downgrade, flip check-in to GET-primary.
 
 - Still untested on Epic 3: bogus/invalid code via the camera (only tested via manual entry so far),
   noisy-room audibility (Story 3.2.3), and the iOS Safari + Android Chrome pass (Story 3.5).
 - `qrbox` was removed from the scanner (whole frame is decoded). If scanning feels slower or less
   reliable than before on a low-end phone, that's the first thing to revisit.
-- `CONFIG.API_BASE` in **both** `scanner.html` and `display.html` points at the Version 4 deployment
-  (`.../AKfycbyUZywdnh62McTK-FJwHlu5ltnrzWI6dnc1v1HMxNwG2PPM1vJO-xsXCz5T-rNrVPVi/exec`) — confirm this is
-  still the deployment in use before debugging anything that looks like a connectivity issue.
+- `CONFIG.API_BASE` in `scanner.html`, `display.html` and `roster-print.html` points at the deployment
+  (`.../AKfycbyUZywdnh62McTK-FJwHlu5ltnrzWI6dnc1v1HMxNwG2PPM1vJO-xsXCz5T-rNrVPVi/exec`). The deployment ID is the same
+  across Versions 4, 5 and 6, so this URL is the current one; it only changes if someone uses "+ New deployment".
 - Load note: the wall polls every 4 s (~8,100 executions over a 9-hour day) plus scanners and the 20 s
   roster poll. The spec's 20,000/day figure is for *outbound* URL Fetch calls (Telegram), which polling
   doesn't use — polling costs Apps Script execution time instead. Watch the Executions dashboard during the

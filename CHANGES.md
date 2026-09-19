@@ -5,6 +5,86 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-20 — Shared access key on every data endpoint; name search on the scanner
+**By:** user ("add a shared secret key. adapt surname search on the scanner.") + Claude
+**Why (the "public PIN list" decision):** the `/exec` URL is in a public repo and the deployment is "Anyone", so `roster` handed every name and PIN to anyone with the URL, and a PIN alone could check anyone in.
+**Backend (`Code.gs`, BACKEND_VERSION `2026-09-20.2`, test-first — 10 checks failed before):** `check-in` (POST + GET), `sync`, `recent` and `roster` require the key (query `key=` or POST-body `key`). Stored only in Script property `API_KEY`;
+run **`generateAccessKey`** once in the editor (24 random characters, shown once in the execution log, never overwritten). **Fail closed:** no key configured → `KEY_NOT_SET`; missing/wrong → `UNAUTHORIZED`; nothing is read or written and no
+Telegram alert is sent. Constant-pattern comparison; the key is never logged and never echoed. `ping` stays open and now reports `secured` and `authorized`, so a device can check its key without touching data.
+**Devices:** the key arrives once through a private link ending `#key=…` (stored in `localStorage.cco_access_key`, then removed from the address bar) or, on the scanner, by pasting it in ⚙️ Settings → Access key (only the last 4 characters are ever shown).
+The scanner, wall and print page share one origin, so a laptop opened once covers the wall and the print page.
+**Scanner:** the key is added in `callApi`, the single request path. **A rejected key is never queued blindly** (previously an error reply would have looked like a lost connection: retry, queue, "will sync" — forever): one request, a card that says
+"ACCESS KEY PROBLEM — NOT RECORDED", the scan is kept, ⚙️ gets a red dot and a specific warning (no key on this device / rejected / server has none), the offline queue and roster fetch stop hammering, and everything clears by itself once a request succeeds.
+**Wall / print page:** send the key; a key problem is spelled out to the operator (tabs 2/3 status, Attendance tab, print page message) and shown to the audience only as the small dot. **Wall polling now has one guarded, resettable loop**
+(timer handle + no overlapping polls) — found while adding tests: a stale back-off timer made an unrelated test order-dependent.
+**Name search (spec §1.2A / §1.4, previously only PIN entry existed; test-first — 12 of 13 checks failed before):** the manual panel has a **Code / Name** toggle. Name mode searches the roster already cached on the phone: every typed word
+must match, accents/punctuation/spacing ignored ("nino" finds Niño, "dela cruz" finds De La Cruz), word-start matches first, 8 shown plus "N more", VIP and "checked in" tags. Picking a name shows a **confirmation** (name, role, club, table) — nothing is sent until
+"✓ Check in", so a stray tap can't check the wrong person in — then the ordinary check-in runs (server duplicate rules, offline queue and VIP identification all unchanged). Works offline. Code mode is untouched.
+**Suite:** Apps Script pass, scanner 203 (66 new), fresh-install 42, wall 102, print 37; `camera.js` pass. **Mutation-checked** (23 broken copies across server, scanner, wall and print page — length-blind compare, unguarded roster/sync, fail-open, key echoed/logged/sent
+nowhere, no retry guard, no confirm step, `innerHTML`, accents, row limit, wrong pass code…): 21 caught first time; the 2 survivors exposed real test gaps (a stale key error shown during a plain outage; a key problem worded as a connection problem) and are now caught.
+**Rollout order matters (see HANDOFF item 0):** checked against the live Version 6 that it ignores an unexpected `key` parameter (roster/recent/ping all answer normally), so the zero-downtime order is: set `API_KEY` by hand → push the frontend → send each
+device its `#key=…` link → only then deploy the keyed `Code.gs`. Deploying it first would lock every device out until each was updated.
+**Not verified:** any of this on a real phone or against the live deployment (the live server is still Version 6, without the key). **Residual risk, stated plainly:** anyone holding the key (or a device that has it) can still read the roster; the key protects
+against strangers who find the repo, not against a leaked link. Rotate it after the event by editing `API_KEY`.
+
+## 2026-09-20 — Secretariat view added (tab 3 "Attendance"); "Council of Clubs and Organizations" confirmed
+**By:** user ("Add the secretariat view"; confirmed the welcome-screen wording) + Claude
+**What (test-first: 16 of 20 new checks failed before; wall suite now 84):** `display.html` gets a third tab, key `3`: **checked in / expected** in large type with a percentage and a progress bar, **VIP x / y**, **Regular x / y**,
+**Not yet arrived**, and a **per-club breakdown** (alphabetical, `x / y` with a mini bar, green when a club is complete, club-less people last as "No club listed"). It refreshes the moment the tab opens and then with the existing 20 s roster poll;
+a failed refresh keeps the last figures and says "Could not refresh — showing the figures from hh:mm:ss"; before the first answer it shows dashes and "Loading…", never zeros. The audience view (tab 1) carries none of it.
+**Deviation (deliberate):** Stage 2 grouped the breakdown by org cluster (Academic / Socio-Civic / Executive VIPs), which needs `org_classification`. The roster feed doesn't carry it, and adding it means a `Code.gs` change + redeploy and more data on
+the public endpoint, so the breakdown is **by club** — which is what "who is here / who is absent" needs anyway (spec §1.2B). Revisit if you want the cluster split.
+**Privacy:** the tab keeps only club, ticket type and status from the roster — no names, PINs or emails are stored or shown (test T7). Club text is written with `textContent` (test T7: hostile text stays text).
+**Mutation-checked** (7 broken copies — wrong percentage, no club merging, no refresh on open, failure wipes data, no empty guard, club-less sorted first, `innerHTML`): each failed the suite; one survived first (weak test data) and the test was strengthened.
+**Suite:** Apps Script pass, scanner 137, fresh-install 42, wall 84, print 27; `camera.js` pass. Layout viewed at 1080p with a fictional 56-row roster. **Not verified:** a real ~300-row roster (scrolling of a long club list) and the live roster endpoint on this tab.
+
+## 2026-09-20 — Version 6 verified live; audience view (tab 1) made clean and formal
+**By:** user (Version 6 deployed 2:01 AM; "pressing 1 or 2 changes the tab, it shouldn't be shown in tab 1 — tab 1 is shown to all the audience, it must have high UX, clear and formal") + Claude
+**Deployment:** `?action=ping` now returns `"version":"2026-09-20.1"` — the deployed script is the current `Code.gs`. D-3 is fully ✅ (Epic 4 timing test and `auditRoster` are the next user-side steps).
+**Wall, tab 1 (test-first: 7 checks failed before, 61 pass now):** the header, tab bar, live indicator and counter are **not shown** on Spotlight — the stage is only the card or the welcome. Keys `1`/`2` still switch (the operator
+tells the crew); the tab bar and status header appear only on Recent. The ambient screen is now a formal welcome ("Welcome to / CCOnklusyon 2026 / Council of Clubs and Organizations" — **confirm that wording**) instead of
+"Next check-in will automatically spotlight"; a small event wordmark sits under the card. The card: serif name with balanced wrapping, a thin tier-coloured rule, role, club in small caps, and an "Assigned table" block. Connection trouble
+is a small wordless amber dot on the stage (never "Reconnecting…" text); Recent still spells it out. Removed the idle-fade of the tab bar (no longer needed).
+**Mutation-checked** (5 broken copies: header shown on stage, dot never shown / never cleared, operator wording back, tab attribute not set): each failed the suite. Layout viewed at 1080p; entrance animations still unverified on a real projector.
+**Telemetry (Stage 2 Tab 3), for the record (built in the entry above):** a secretariat view — total checked in / expected (e.g. 142 / 300), a progress bar with a percentage, and a cluster breakdown (Academic Orgs / Socio-Civic / Executive VIPs as x / y (%)). The roster
+endpoint has no `org_classification`, so only the count, bar and VIP/Regular split are possible without a backend change. Not built.
+
+## 2026-09-20 — Wall reworked to two tabs (Spotlight + Recent); Version 5 live but not the current file; scanner detector gap closed
+**By:** user (deployed Version 5; asked for "2 tabs: Recent showing all recency, and a Single-Attendee Spotlight"; "use recency instead of just because Stage 2 stated it") + Claude
+**Deployment finding:** Version 5 (Sep 20 1:40 AM) is live — `?action=ping` → `pong`, GET check-in answers "Missing attendance_code." — **but the pong has no `version` field**, while the repo's `handlePing_` returns
+`version: '2026-09-20.1'`. So the running script knows `ping` and GET check-in but predates the version marker; the cause isn't established from here. **Check:** paste the current `apps-script/Code.gs`, Deploy → Manage
+deployments → ✏️ → New version → Deploy, then open `…/exec?action=ping` — it must contain `"version":"2026-09-20.1"` (the dialog's number is not the test).
+**Scanner (test-first, B6: 3 checks failed before):** a `pong` with no `version` was treated as *current* ("backend ?", no warning) — exactly the state above. It now counts as outdated (red dot + warning).
+**Wall (`display.html`, test-first: 20 of 21 new checks failed before):** two tabs — **Spotlight** (default; exactly one attendee at a time: name, role, club, table) and **Recent** (everyone, newest first — the previous
+hero + grid, unchanged, *not* Stage 2's "last 16", by your instruction). Keys `1`/`2` (tab bar only on Recent — see the entry above). Spotlight rules (Stage 2 §6.5/§11.2): each arrival held 5 s (2 s when 3+ are waiting), a VIP jumps ahead
+of waiting regulars, oldest-first within a burst, the last card stays until 30 s of quiet then the ambient welcome returns, people already checked in when the wall opens are **never replayed**, queue capped at 20 (dropped
+people stay on Recent). `SHOWCASE_MODE` is now `1|2|3` per Stage 2/TC-DEV-018 (1 = VIP-only spotlight, 2 = regulars get a name card, 3 = regulars get a monogram); a photo-less VIP always gets a monogram.
+**Deviations, all deliberate:** (1) **No Tab 3 (telemetry dashboard)** — you asked for two tabs and Stage 3 §16 marks it P2 "DEFER / DROP"; the header still shows checked-in / total. (2) **`MAX_TILES` stays 400, not ≤32** —
+Stage 2 §11.2 / Stage 3 §8.5 cap the DOM at 32 nodes, but the Recent tab must list everyone (~300); the spotlight DOM is exactly one card, and the store/queue stay bounded. (3) **Default `SHOWCASE_MODE` = 3**, which reproduces the
+previous look (monograms) — Stage 2's recommended default is 2; flip one number to change it.
+**Suite:** Apps Script pass, scanner 137, fresh-install 42, wall 51 (33 new), print 27; `camera.js` pass. Mutation-checked (7 broken copies — replay on first load, no VIP priority, no queue cap, append-not-replace, no idle
+return, newest-first order, Mode 1 ignored): each failed the suite. Layout viewed at 1080p with fictional data (animations disabled in the screenshot tool — headless virtual time freezes them).
+**Not verified:** the 400 ms/600 ms entrance animations and the timing on a real projector, a real VIP photo in the spotlight, the 30-minute soak (5.2.2). Test with the beta (6.2.5/6.2.6).
+
+## 2026-09-20 — D-6 paper failsafe roster built (`roster-print.html`, task 7.3.2)
+**By:** Claude (user: "continue the development")
+**Why this, why now:** the live `/exec` is still Version 4 (`?action=ping` → "Unknown action." re-probed this session), which blocks the redeploy-dependent items (Gate 3, timed VIP alert,
+device retests). D-6 needs none of them — it only reads the `roster` endpoint, which **is** live in Version 4 (returned the 10 rows) — and it is required by spec §1.4 and Gate 5
+("paper failsafe printed and staged"). **`Code.gs` deliberately untouched** so the undeployed backend delta does not grow.
+**What:** `roster-print.html` (repo root, single file, zero-build). One `GET ?action=roster`; rows sorted by club (case-insensitive, club-less last under "No club listed") then name;
+per person: blank tick box, name + designation, ticket (VIPs marked in words — paper is monochrome), seat (`0`/blank → "—", same rule as BUG-013), 5-digit PIN in large monospace. Header shows
+counts and the generated time (so a stale copy is recognisable); print CSS keeps rows whole, repeats the header on every page, hides the toolbar, adds "Page N of M" where the browser supports
+margin boxes. Ignores every field it doesn't print (no email). Load failure / server ERROR / empty roster each show a clear message instead of an empty printable sheet. Nothing is stored;
+the page holds no attendee data, so the public repo stays clean.
+**Tests (test-first — suite failed with a missing-file error before the page existed):** new suite `tests/print/` wired into `tests/run.js` (`--print <file>` to point at another copy):
+14 cases / 27 checks, all pass. Mutation-checked against deliberately broken copies (no sort, `innerHTML`, seat 0 shown, no case-folding, no print CSS, swallowed server error): each failed the suite.
+Not mutation-checked: P11 (email never rendered) — covered by design, since the page never reads `email`. Full suite: Apps Script pass, scanner 134, fresh-install 42, wall 18, print 27; `camera.js` pass.
+**Verified visually** against the live 10-row roster (Edge headless): layout correct; a header tick-box artefact found there was fixed. **Not verified:** a real paper printout / page breaks across
+a ~300-row roster (only 10 rows exist) and Chrome-vs-Edge margin-box page numbers — do a test print once the real roster is loaded.
+**Needs you:** print only **after** the final seats/PINs are set (a paper copy does not update); 2 copies per spec, one at Usher Station 1 and one at the Secretariat triage desk. Treat the printout as
+confidential — it lists every PIN. Publishing: the page is served from GitHub Pages once pushed, and anyone with the URL can load the same roster the `/exec` endpoint already exposes (see the
+open security note in the session summary / HANDOFF).
+
 ## 2026-09-20 — Stale deployment diagnosed (Version 4); backend version check added
 **By:** user (Manage-deployments screen + Executions log) + Claude
 **Diagnosis:** the Executions log (`Sent in 474 ms (1 attempt(s))`) proves the editor holds the new code, but the deployment dialog still read **Version 4 · Sep 19, 5:08 PM** and the live

@@ -15,7 +15,8 @@ decision log (why things are the way they are).
 | `apps-script/Code.gs` | Backend gateway — check-in, offline-sync flush, recent-arrivals feed, roster cache feed, VIP Telegram alert | Google Apps Script (Web App) |
 | `apps-script/EmailBlaster.gs` | Entry-pass email sender, plus a generic reusable blast engine for any other event email | Google Apps Script |
 | `scanner.html` | Usher-facing door scanner — camera QR scan, manual code fallback, offline queue, audio/visual feedback | Static, served via GitHub Pages |
-| `display.html` | Projector live wall — hero banner of the 3 latest arrivals plus a grid of everyone else, Gold/Blue tier cards, polls every 4 s | Static, served via GitHub Pages |
+| `display.html` | Projector live wall — three tabs (keys 1/2/3): audience Spotlight (one attendee at a time), Recent (everyone, newest first), Attendance (secretariat counts). Gold/Blue tier cards, polls every 4 s | Static, served via GitHub Pages |
+| `roster-print.html` | Paper failsafe roster (D-6) — loads the roster, sorted by club, with tick boxes, seats and PINs; print it after the final seat/PIN change | Static, served via GitHub Pages |
 | `HANDOFF.md` | Current status snapshot — what's built, what's next, open items | — |
 | `docs/mvp-spec.md` | Original MVP spec (client + technical), with deviations noted at the top | — |
 | `docs/sprint-backlog.md` | Epic / Story / Task backlog and the 5 QA gates | — |
@@ -28,6 +29,8 @@ decision log (why things are the way they are).
 | `tests/README.md` | curl contract checks against the deployed `/exec` URL | — |
 
 ## Deploying a change
+
+**Access key:** every data request needs the shared key (Script property `API_KEY`; `generateAccessKey` can create one); devices get it via a private `#key=…` link. Roll-out order is in `HANDOFF.md`.
 
 **Backend (`apps-script/Code.gs` / `apps-script/EmailBlaster.gs`):** open the `Master_Attendance` tab's bound Apps
 Script project → paste the updated file in → **Deploy → Manage deployments → Edit → New

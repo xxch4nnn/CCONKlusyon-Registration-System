@@ -15,17 +15,31 @@
   wall opened mid-event immediately shows everyone already checked in; after that it asks for the
   spec's limit of 16 and accumulates new arrivals client-side — no backend change needed.
 
-  Layout: hero banner (3 most recent arrivals, large) + grid of everyone else who has arrived.
+  Three tabs, switched with keys 1 / 2 / 3 (the operator tells the crew) or the buttons shown on tabs 2 and 3:
+    1 Spotlight — the AUDIENCE view: a clean stage with no header, buttons or status wording. Exactly ONE attendee at a
+      time, full screen (name, role, club, table). Each arrival is held 5 s
+      (2 s when 3+ are waiting); a VIP jumps ahead of waiting regulars; the last card stays until 30 s of quiet, then
+      the ambient welcome returns. People already checked in when the wall opens are never replayed.
+    2 Recent — everyone who has arrived, newest first: hero banner (3 latest, large) + grid of the rest.
+    3 Attendance — the SECRETARIAT view: checked in / expected with a progress bar, VIP vs Regular, who has not
+      arrived yet, and a per-club breakdown. Built from the roster feed only; shows no names, PINs or emails.
   Cards: VIP = gold #B8860B border/glow/"VIP PASS" badge; Regular = royal blue #1A56DB border/"DELEGATE".
-  Photos: VIPs use photo_url. Regular attendees have none by design, so they fall back per
-  CONFIG.SHOWCASE_MODE ('monogram' = initials avatar, 'typographic' = big name only).
+  Photos: VIPs use photo_url. Regular attendees have none by design, so CONFIG.SHOWCASE_MODE decides
+  (Stage 2 §6.5.2): 1 = VIP-only spotlight (regulars only appear on Recent) · 2 = regulars get a name card, no
+  avatar · 3 = regulars get a monogram avatar. A VIP with no working photo always gets a monogram.
+  Stage 2 grouped Tab 3 by org cluster (Academic / Socio-Civic / VIP); the roster feed has no org_classification, so
+  it is grouped by club instead.
 
-  A failed poll never crashes the tab: the last good data stays on screen, a "reconnecting" badge
-  shows, and polling retries with a capped backoff.
+  Access key: every request carries the shared key (Code.gs refuses without it). Open the page once as
+  display.html#key=… — the key is stored in this browser and removed from the address bar. A key problem is spelled out
+  on tabs 2/3 and shown to the audience only as the small dot.
+
+  A failed poll never crashes the tab: the last good data stays on screen and polling retries with a capped
+  backoff. Recent shows a "Reconnecting…" badge; the audience view shows only a small amber dot, never words.
 -->
 <style>
   :root {
-    --gold: #B8860B; --blue: #1A56DB;
+    --gold: #B8860B; --blue: #1A56DB; --serif: Georgia, "Times New Roman", serif;
     --bg: #070A12; --panel: #10151F; --text: #F3F4F6; --muted: #8B95A7;
     --ease: ease-out;
   }
@@ -59,6 +73,74 @@
   @keyframes ping { 70% { box-shadow: 0 0 0 .8rem rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
 
   .label { font-size: 1rem; font-weight: 700; letter-spacing: .28em; text-transform: uppercase; color: var(--muted); margin: 0 0 .7rem; }
+
+  /* ---- Tabs + views ---- */
+  .tabs { display: flex; gap: .6rem; }
+  .tabs button { font: inherit; font-size: 1rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
+    background: transparent; border: 1px solid #263045; border-radius: 999px; padding: .5rem 1.3rem; cursor: pointer; }
+  .tabs button[aria-selected="true"] { color: var(--text); background: #1C2740; border-color: #3B5BDB; }
+  .tabs kbd { font: inherit; opacity: .55; margin-right: .5rem; }
+  /* Tab 1 is what the audience sees: no header, no tab bar, no counters. Keys 1/2 still work. */
+  body[data-tab="spotlight"] header { display: none; }
+  .view { display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; gap: 1.2rem; }
+
+  /* ---- Spotlight: one attendee, full screen ---- */
+  #viewSpotlight { position: relative; align-items: center; justify-content: center; }
+  #ambient { text-align: center; animation: spotEnter 700ms var(--ease); }
+  #ambient .eyebrow { margin: 0; font-size: 1.7rem; letter-spacing: .5em; text-transform: uppercase; color: #C9B26B; }
+  #ambient h2 { margin: 1.2rem 0 1.6rem; font: 400 8.2rem/1.05 var(--serif); letter-spacing: .01em; color: var(--text); }
+  #ambient .rule { width: 14rem; height: 2px; margin: 0 auto 1.6rem; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
+  #ambient .org { margin: 0; font-size: 1.7rem; letter-spacing: .3em; text-transform: uppercase; color: var(--muted); }
+  .stage-mark { position: absolute; left: 0; right: 0; bottom: 1rem; text-align: center; font-size: 1.1rem; letter-spacing: .45em; text-transform: uppercase; color: #5C6678; }
+  #stageDot { position: fixed; right: 1.4rem; bottom: 1.4rem; width: .9rem; height: .9rem; border-radius: 50%; background: #F59E0B; box-shadow: 0 0 .8rem rgba(245,158,11,.7); }
+  body:not([data-tab="spotlight"]) #stageDot { display: none; } /* the other tabs spell the status out */
+  #spotStage { display: flex; align-items: center; justify-content: center; width: 100%; }
+  .card.spot { flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 1rem;
+    width: min(80rem, 94%); padding: 3.4rem 5rem 3rem; border-width: 5px; border-radius: 2rem; animation: spotEnter 400ms var(--ease); }
+  .card.spot.vip { box-shadow: 0 0 60px rgba(184,134,11,.45); }
+  .spot .badge { top: 1.4rem; right: 1.6rem; font-size: 1.2rem; padding: .5rem 1.4rem; }
+  .spot .avatar-wrap, .spot .avatar { width: 15rem; height: 15rem; }
+  .spot .avatar { border-radius: 50%; border: 6px solid var(--blue); }
+  .spot.vip .avatar { border-color: var(--gold); }
+  .spot .welcome { font-size: 1.4rem; font-weight: 700; letter-spacing: .5em; text-transform: uppercase; color: #6E93F0; }
+  .spot.vip .welcome { color: #D9B44A; }
+  .spot .name { font-family: var(--serif); font-weight: 700; font-size: 5.8rem; line-height: 1.08; text-wrap: balance; }
+  .spot.typo .name { font-size: 6.2rem; }
+  .spot .rule { width: 12rem; height: 2px; background: var(--blue); }
+  .spot.vip .rule { background: var(--gold); }
+  .spot .role { font-size: 2.4rem; font-weight: 600; color: #DDE2EC; }
+  .spot .club { font-size: 1.7rem; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
+  .spot .table { display: flex; flex-direction: column; align-items: center; gap: .2rem; margin-top: 1rem; padding: .9rem 3.2rem;
+    border: 1px solid rgba(255,255,255,.16); border-radius: 1.2rem; background: rgba(255,255,255,.06); }
+  .spot .table .k { font-size: 1.3rem; letter-spacing: .3em; text-transform: uppercase; color: var(--muted); }
+  .spot .table .v { font-size: 3rem; font-weight: 800; }
+  @keyframes spotEnter { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
+
+  /* ---- Attendance (secretariat) ---- */
+  #viewTelemetry { overflow-y: auto; }
+  .tele { width: 100%; max-width: 104rem; margin: 0 auto; display: flex; flex-direction: column; gap: 1.3rem; padding-bottom: 1.5rem; }
+  .tele-top { display: flex; align-items: baseline; justify-content: space-between; }
+  #teleStamp { font-size: 1rem; color: var(--muted); letter-spacing: .08em; }
+  .tele-total { display: flex; align-items: baseline; gap: 1rem; }
+  .tele-total b { font-size: 7.5rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
+  .tele-total .sep { font-size: 4rem; color: var(--muted); }
+  .tele-total .lbl { font-size: 1.6rem; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-left: .6rem; }
+  #telePct { margin-left: auto; font-size: 4.4rem; font-weight: 800; color: #6E93F0; font-variant-numeric: tabular-nums; }
+  .bar { height: 1.7rem; border-radius: 999px; background: #1C2740; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--blue), #4B7BF5); transition: width .6s ease-out; }
+  .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
+  .stat { display: flex; flex-direction: column; gap: .3rem; padding: 1.1rem 1.5rem; border-radius: 1rem; background: var(--panel); border: 1px solid #263045; }
+  .stat.vip { border-color: var(--gold); }
+  .stat .k { font-size: 1.05rem; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
+  .stat .v { font-size: 3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .clubs { display: grid; grid-template-columns: repeat(auto-fill, minmax(31rem, 1fr)); gap: .5rem 1.8rem; }
+  .club-row { display: grid; grid-template-columns: 1fr auto; column-gap: 1rem; row-gap: .3rem; padding: .55rem 0; border-bottom: 1px solid #1B2436; }
+  .club-row .cn { font-size: 1.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .club-row .cc { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .club-row .mini { grid-column: 1 / -1; height: .35rem; border-radius: 999px; background: #1C2740; overflow: hidden; }
+  .club-row .mini i { display: block; height: 100%; background: #4B7BF5; }
+  .club-row.full .mini i { background: #22C55E; }
+  #teleStatus { margin: 0; font-size: 1.15rem; font-weight: 600; color: #F59E0B; }
 
   /* ---- Hero: 3 most recent arrivals ---- */
   #heroSection { flex: 0 0 auto; }
@@ -117,38 +199,76 @@
   #empty .pulse { animation: breathe 3s ease-in-out infinite; }
   @keyframes breathe { 50% { opacity: .55; } }
 
-  @media (prefers-reduced-motion: reduce) { .enter, .live i, #empty .pulse { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .enter, .live i, #empty .pulse, .card.spot, #ambient { animation: none; } }
 </style>
 </head>
-<body>
+<body data-tab="spotlight">
 <div id="wall">
   <header>
     <div class="brand">
       <h1>CCO<span>nklusyon</span> 2026</h1>
       <p>Welcome, delegates</p>
     </div>
+    <nav class="tabs" role="tablist" aria-label="Wall view">
+      <button id="tabSpotlight" type="button" role="tab" aria-selected="true"><kbd>1</kbd>Spotlight</button>
+      <button id="tabRecent" type="button" role="tab" aria-selected="false"><kbd>2</kbd>Recent</button>
+      <button id="tabTelemetry" type="button" role="tab" aria-selected="false"><kbd>3</kbd>Attendance</button>
+    </nav>
     <div class="stats">
       <div class="live" id="live"><i></i><span id="liveText">Live</span></div>
       <div class="count"><b id="countNum">0</b><span id="countLabel">Checked in</span></div>
     </div>
   </header>
 
-  <section id="heroSection" hidden>
-    <p class="label">Recent arrivals</p>
-    <div id="hero"></div>
+  <section id="viewSpotlight" class="view">
+    <div id="ambient">
+      <p class="eyebrow">Welcome to</p>
+      <h2>CCOnklusyon 2026</h2>
+      <div class="rule"></div>
+      <p class="org">Council of Clubs and Organizations</p>
+    </div>
+    <div id="spotStage"></div>
+    <div id="stageMark" class="stage-mark" hidden>CCOnklusyon 2026</div>
   </section>
+  <span id="stageDot" hidden title="Connection lost — retrying"></span>
 
-  <section id="gridSection">
-    <p class="label" id="gridLabel" hidden>Also arrived</p>
-    <div id="gridScroll">
-      <div id="grid"></div>
-      <div id="empty">
-        <h2 class="pulse">Welcome to CCOnklusyon 2026</h2>
-        <p class="pulse" id="emptyMsg">Loading arrivals…</p>
+  <section id="viewTelemetry" class="view" hidden>
+    <div class="tele">
+      <div class="tele-top"><p class="label">Attendance</p><span id="teleStamp"></span></div>
+      <div class="tele-total">
+        <b id="teleIn">–</b><span class="sep">/</span><b id="teleAll">–</b><span class="lbl">checked in</span>
+        <span id="telePct">–</span>
       </div>
-      <div class="fade-bottom" id="fade" hidden></div>
+      <div class="bar" id="teleBar" role="progressbar" aria-label="Checked in" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i id="teleFill"></i></div>
+      <div class="stats3">
+        <div class="stat vip" id="teleVip"><span class="k">VIP</span><span class="v">–</span></div>
+        <div class="stat" id="teleReg"><span class="k">Regular</span><span class="v">–</span></div>
+        <div class="stat" id="telePending"><span class="k">Not yet arrived</span><span class="v">–</span></div>
+      </div>
+      <p class="label">By club</p>
+      <div class="clubs" id="teleClubs"></div>
+      <p id="teleStatus" role="status">Loading attendance…</p>
     </div>
   </section>
+
+  <div id="viewRecent" class="view" hidden>
+    <section id="heroSection" hidden>
+      <p class="label">Recent arrivals</p>
+      <div id="hero"></div>
+    </section>
+
+    <section id="gridSection">
+      <p class="label" id="gridLabel" hidden>Also arrived</p>
+      <div id="gridScroll">
+        <div id="grid"></div>
+        <div id="empty">
+          <h2 class="pulse">Welcome to CCOnklusyon 2026</h2>
+          <p class="pulse" id="emptyMsg">Loading arrivals…</p>
+        </div>
+        <div class="fade-bottom" id="fade" hidden></div>
+      </div>
+    </section>
+  </div>
 </div>
 
 <script>
@@ -169,8 +289,15 @@
     FETCH_TIMEOUT_MS: 9000,
     MAX_BACKOFF_MS: 12000,
     HERO_COUNT: 3,
-    MAX_TILES: 400,            // cap on grid DOM size so an all-day run can't grow without bound
-    SHOWCASE_MODE: 'monogram', // regular attendees have no photo: 'monogram' (initials avatar) | 'typographic' (name only)
+    // Stage 2/3 cap the DOM at 32 nodes; the Recent tab lists everyone (~300), so the cap is larger but still bounded.
+    MAX_TILES: 400,
+    KEY_STORAGE: 'cco_access_key', // shared with scanner.html and roster-print.html (same origin)
+    SHOWCASE_MODE: 3,          // 1 = VIP-only spotlight · 2 = regulars get a name card · 3 = regulars get a monogram avatar
+    SPOTLIGHT_MS: 5000,        // hold per spotlighted arrival (Stage 2 §6.5.2)
+    SPOTLIGHT_MIN_MS: 2000,    // ...shortened to this when SPOTLIGHT_BURST or more arrivals are waiting
+    SPOTLIGHT_BURST: 3,
+    SPOTLIGHT_QUEUE_MAX: 20,   // waiting arrivals beyond this are dropped (oldest regular first) — they stay on Recent
+    IDLE_MS: 30000,            // the last card stays this long after it appeared, then the ambient welcome returns
     SCROLL_PX_PER_SEC: 22,     // slow drift when the grid is taller than the screen
     SCROLL_PAUSE_MS: 3500
   };
@@ -236,7 +363,8 @@
     return svg;
   }
 
-  // Avatar per showcase policy. Returns null in typographic mode for photo-less attendees.
+  // Avatar per showcase policy. Returns null (name-only card) for a photo-less regular unless SHOWCASE_MODE is 3;
+  // a photo-less VIP always gets a monogram so the stage never shows a hole.
   function buildAvatar(a, tier) {
     const photo = safeUrl(a.photo_url);
     const wrap = el('div', 'avatar-wrap');
@@ -250,22 +378,35 @@
       wrap.appendChild(img);
       return wrap;
     }
-    if (CONFIG.SHOWCASE_MODE === 'typographic') return null;
+    if (tier.cls !== 'vip' && CONFIG.SHOWCASE_MODE !== 3) return null;
     wrap.appendChild(monogramSvg(a.full_name, tier));
     return wrap;
   }
 
-  function buildCard(a, mode) { // mode: 'hero' | 'tile'
+  function buildCard(a, mode) { // mode: 'hero' | 'tile' | 'spot'
     const tier = tierOf(a);
     const avatar = buildAvatar(a, tier);
     const card = el('div', 'card ' + mode + ' ' + tier.cls + (avatar ? '' : ' typo'));
     card.appendChild(el('span', 'badge', tier.badge));
-    if (a.fresh) {
+    if (a.fresh && mode !== 'spot') { // the spotlight card has its own 400 ms entrance
       card.classList.add('enter');
       card.addEventListener('animationend', function () { card.classList.remove('enter'); }, { once: true });
     }
     const role = [a.designation, a.club_name].filter(Boolean).join(' · ');
-    if (mode === 'hero') {
+    if (mode === 'spot') {
+      if (avatar) card.appendChild(avatar);
+      card.appendChild(el('div', 'welcome', 'Welcome'));
+      card.appendChild(el('div', 'name', a.full_name || ''));
+      card.appendChild(el('div', 'rule'));
+      if (a.designation) card.appendChild(el('div', 'role', a.designation));
+      if (a.club_name) card.appendChild(el('div', 'club', a.club_name));
+      if (seatOf(a.table_allocation)) {
+        const t = el('div', 'table');
+        t.appendChild(el('span', 'k', 'Assigned table'));
+        t.appendChild(el('span', 'v', seatOf(a.table_allocation)));
+        card.appendChild(t);
+      }
+    } else if (mode === 'hero') {
       if (avatar) card.appendChild(avatar);
       card.appendChild(el('div', 'welcome', 'Welcome'));
       card.appendChild(el('div', 'name', a.full_name || ''));
@@ -281,6 +422,77 @@
       card.appendChild(text);
     }
     return card;
+  }
+
+  // ---- Tabs ------------------------------------------------------------------------------
+  function setTab(name) {
+    const tab = name === 'recent' || name === 'telemetry' ? name : 'spotlight';
+    document.body.dataset.tab = tab;
+    $('viewSpotlight').hidden = tab !== 'spotlight';
+    $('viewRecent').hidden = tab !== 'recent';
+    $('viewTelemetry').hidden = tab !== 'telemetry';
+    $('tabSpotlight').setAttribute('aria-selected', String(tab === 'spotlight'));
+    $('tabRecent').setAttribute('aria-selected', String(tab === 'recent'));
+    $('tabTelemetry').setAttribute('aria-selected', String(tab === 'telemetry'));
+    if (tab === 'recent') requestAnimationFrame(measureScroll); // the grid can only be measured once it is visible
+    if (tab === 'telemetry') loadRoster(); // fresh figures the moment the secretariat opens the tab
+  }
+  $('tabSpotlight').addEventListener('click', function () { setTab('spotlight'); });
+  $('tabRecent').addEventListener('click', function () { setTab('recent'); });
+  $('tabTelemetry').addEventListener('click', function () { setTab('telemetry'); });
+  window.addEventListener('keydown', function (e) {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    if (e.key === '1') setTab('spotlight'); else if (e.key === '2') setTab('recent'); else if (e.key === '3') setTab('telemetry');
+    wake();
+  });
+
+  // ---- Spotlight (tab 1): one attendee at a time --------------------------------------------
+  const spot = { queue: [], timer: null, idleTimer: null };
+  function resetSpotlight() {
+    clearTimeout(spot.timer); clearTimeout(spot.idleTimer);
+    spot.timer = spot.idleTimer = null; spot.queue = [];
+    showAmbient();
+  }
+  function showAmbient() {
+    spot.idleTimer = null;
+    $('spotStage').replaceChildren();
+    $('ambient').hidden = false;
+    $('stageMark').hidden = true; // the welcome already carries the event name
+  }
+  function isVip(a) { return tierOf(a).cls === 'vip'; }
+  // `arrived` = people who just checked in (never the silent first load). Oldest first, so a burst plays in order.
+  function enqueueSpotlight(arrived) {
+    arrived.slice().sort(function (x, y) { return x.ts - y.ts; }).forEach(function (a) {
+      if (CONFIG.SHOWCASE_MODE === 1 && !isVip(a)) return; // Mode 1: regulars only appear on Recent
+      if (isVip(a)) { // an escort is waiting: ahead of regulars, behind VIPs who arrived earlier
+        let i = 0;
+        while (i < spot.queue.length && isVip(spot.queue[i])) i++;
+        spot.queue.splice(i, 0, a);
+      } else {
+        spot.queue.push(a);
+      }
+    });
+    while (spot.queue.length > CONFIG.SPOTLIGHT_QUEUE_MAX) {
+      const i = spot.queue.findIndex(function (q) { return !isVip(q); });
+      spot.queue.splice(i < 0 ? 0 : i, 1);
+    }
+    pumpSpotlight();
+  }
+  function pumpSpotlight() {
+    if (spot.timer || !spot.queue.length) return; // a card is still on its hold, or nobody is waiting
+    showSpotlight(spot.queue.shift());
+  }
+  function showSpotlight(a) {
+    clearTimeout(spot.idleTimer);
+    $('ambient').hidden = true;
+    $('stageMark').hidden = false;
+    $('spotStage').replaceChildren(buildCard(a, 'spot')); // replaced, never appended: exactly one card in the DOM
+    const hold = spot.queue.length >= CONFIG.SPOTLIGHT_BURST ? CONFIG.SPOTLIGHT_MIN_MS : CONFIG.SPOTLIGHT_MS;
+    spot.timer = setTimeout(function () {
+      spot.timer = null;
+      if (spot.queue.length) { pumpSpotlight(); return; }
+      spot.idleTimer = setTimeout(showAmbient, Math.max(0, CONFIG.IDLE_MS - hold));
+    }, hold);
   }
 
   // ---- Render (keyed, so existing cards — and their loaded photos — are reused) ------------
@@ -323,14 +535,39 @@
     $('countLabel').textContent = totalRoster ? 'of ' + totalRoster + ' checked in' : 'Checked in';
   }
 
+  // ---- Shared access key -------------------------------------------------------------------
+  let keyProblem = null; // null | 'UNAUTHORIZED' | 'KEY_NOT_SET' — set from the server's last answer
+  function accessKey() { try { return localStorage.getItem(CONFIG.KEY_STORAGE) || ''; } catch (e) { return ''; } }
+  function adoptKey() {
+    const m = /[#&]key=([^&]+)/.exec(location.hash || '');
+    if (!m) return false;
+    let k = m[1]; try { k = decodeURIComponent(m[1]); } catch (e) { /* keep raw */ }
+    try { localStorage.setItem(CONFIG.KEY_STORAGE, k); } catch (e) { /* storage blocked */ }
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+    return true;
+  }
+  function keyLabel() {
+    return keyProblem === 'KEY_NOT_SET' ? 'Server has no access key' : !accessKey() ? 'No access key on this device' : 'Access key rejected';
+  }
+  function keyHelp() {
+    if (keyProblem === 'KEY_NOT_SET') return 'The server has no access key set. In Apps Script run generateAccessKey, then redeploy.';
+    if (!accessKey()) return 'No access key on this device. Open this page once with #key=… on the end of the address (ask the tech lead).';
+    return 'The server rejected this device’s access key. Open this page once with the right #key=… on the end.';
+  }
+
   // ---- Network -----------------------------------------------------------------------------
   async function getJson(query) {
     const ctrl = new AbortController();
     const timer = setTimeout(function () { ctrl.abort(); }, CONFIG.FETCH_TIMEOUT_MS);
     try {
-      const res = await fetch(CONFIG.API_BASE + query, { signal: ctrl.signal });
+      const key = accessKey();
+      const res = await fetch(CONFIG.API_BASE + query + (key ? '&key=' + encodeURIComponent(key) : ''), { signal: ctrl.signal });
       const json = await res.json();
-      if (json && json.status === 'SUCCESS') return json;
+      if (json && json.status === 'SUCCESS') { keyProblem = null; return json; }
+      if (json && json.status === 'ERROR' && (json.code === 'UNAUTHORIZED' || json.code === 'KEY_NOT_SET')) {
+        keyProblem = json.code;
+        throw new Error('Access key problem');
+      }
       throw new Error('Bad response');
     } finally {
       clearTimeout(timer);
@@ -342,6 +579,7 @@
   function ingest(list, animate, snapshot) {
     let changed = false;
     const seen = new Set();
+    const arrived = [];
     list.forEach(function (a) {
       if (!a || !a.full_name) return;
       const key = keyOf(a);
@@ -349,14 +587,19 @@
       const ts = tsOf(a);
       const cur = store.get(key);
       if (!cur) {
-        store.set(key, Object.assign({}, a, { key: key, ts: ts, fresh: animate }));
+        const entry = Object.assign({}, a, { key: key, ts: ts, fresh: animate });
+        store.set(key, entry);
+        arrived.push(entry);
         changed = true;
       } else if (ts > cur.ts) { // checked in again later: replace, and bring the card back in as the newest
-        store.set(key, Object.assign({}, a, { key: key, ts: ts, fresh: animate }));
+        const entry = Object.assign({}, a, { key: key, ts: ts, fresh: animate });
+        store.set(key, entry);
+        arrived.push(entry);
         heroEls.delete(key); tileEls.delete(key);
         changed = true;
       }
     });
+    if (animate && arrived.length) enqueueSpotlight(arrived); // the silent first load must never replay everyone on stage
     if (snapshot && list.length < CONFIG.INITIAL_LIMIT) { // a full list — a truncated one can't prove anyone is gone
       Array.from(store.keys()).forEach(function (k) {
         if (!seen.has(k)) { store.delete(k); heroEls.delete(k); tileEls.delete(k); changed = true; }
@@ -393,9 +636,13 @@
   let firstLoadDone = false, fails = 0, lastFullAt = 0;
   function setLive(ok) {
     $('live').classList.toggle('down', !ok);
-    $('liveText').textContent = ok ? 'Live' : 'Reconnecting…';
+    $('stageDot').hidden = ok; // the audience view shows trouble as a small dot only, never as words
+    $('liveText').textContent = ok ? 'Live' : (keyProblem ? keyLabel() : 'Reconnecting…');
   }
+  let pollTimer = null, polling = false; // one loop only: the handle lets it be cleared, the flag stops overlapping polls
   async function poll() {
+    if (polling) return;
+    polling = true;
     try {
       // First load and then once a minute: ask for everyone (authoritative). In between: just the newest few.
       const full = !firstLoadDone || Date.now() - lastFullAt >= CONFIG.RECONCILE_MS;
@@ -408,20 +655,97 @@
     } catch (err) {
       fails++; setLive(false); // keep showing the last good data
     } finally {
+      polling = false;
       const wait = fails ? Math.min(CONFIG.POLL_MS * Math.pow(2, Math.min(fails, 2)), CONFIG.MAX_BACKOFF_MS) : CONFIG.POLL_MS;
-      setTimeout(poll, wait);
+      pollTimer = setTimeout(poll, wait);
     }
   }
+  function restartPolling() { clearTimeout(pollTimer); fails = 0; poll(); }
 
   let checkedInFromRoster = 0, rosterLoaded = false;
-  async function pollRoster() {
+  let rosterSummary = null, rosterAt = null, rosterFailed = false, rosterBusy = false;
+
+  // Attendance figures from the roster feed. Only club, ticket type and status are kept — no names, PINs or emails.
+  function summarize(rows) {
+    const sum = { total: 0, checkedIn: 0, vip: { inn: 0, total: 0 }, reg: { inn: 0, total: 0 }, clubs: new Map() };
+    rows.forEach(function (a) {
+      if (!a) return;
+      const inn = a.checkin_status === 'Checked-In';
+      const tier = a.ticket_type === 'VIP Pass' ? sum.vip : sum.reg;
+      sum.total++; tier.total++;
+      if (inn) { sum.checkedIn++; tier.inn++; }
+      const name = String(a.club_name == null ? '' : a.club_name).trim();
+      const key = name.toLowerCase();
+      let c = sum.clubs.get(key);
+      if (!c) { c = { name: name || 'No club listed', blank: !name, inn: 0, total: 0 }; sum.clubs.set(key, c); }
+      c.total++;
+      if (inn) c.inn++;
+    });
+    sum.clubList = Array.from(sum.clubs.values()).sort(function (x, y) {
+      if (x.blank !== y.blank) return x.blank ? 1 : -1;
+      return x.name.localeCompare(y.name, undefined, { sensitivity: 'base' });
+    });
+    return sum;
+  }
+
+  function renderTelemetry() {
+    const status = $('teleStatus');
+    const sum = rosterSummary;
+    if (!sum) { // nothing loaded yet: dashes, never fake zeros
+      ['teleIn', 'teleAll', 'telePct'].forEach(function (id) { $(id).textContent = '–'; });
+      ['teleVip', 'teleReg', 'telePending'].forEach(function (id) { $(id).querySelector('.v').textContent = '–'; });
+      $('teleFill').style.width = '0%'; $('teleBar').setAttribute('aria-valuenow', '0');
+      $('teleClubs').replaceChildren(); $('teleStamp').textContent = '';
+      status.hidden = false;
+      status.textContent = rosterFailed ? (keyProblem ? keyHelp() : 'Could not load attendance. Check the connection — retrying.') : 'Loading attendance…';
+      return;
+    }
+    const pct = sum.total ? Math.round(sum.checkedIn * 100 / sum.total) : 0;
+    $('teleIn').textContent = sum.checkedIn;
+    $('teleAll').textContent = sum.total;
+    $('telePct').textContent = pct + '%';
+    $('teleFill').style.width = pct + '%';
+    $('teleBar').setAttribute('aria-valuenow', String(pct));
+    $('teleVip').querySelector('.v').textContent = sum.vip.inn + ' / ' + sum.vip.total;
+    $('teleReg').querySelector('.v').textContent = sum.reg.inn + ' / ' + sum.reg.total;
+    $('telePending').querySelector('.v').textContent = sum.total - sum.checkedIn;
+    const frag = document.createDocumentFragment();
+    sum.clubList.forEach(function (c) {
+      const row = el('div', 'club-row' + (c.inn === c.total ? ' full' : ''));
+      row.appendChild(el('span', 'cn', c.name));
+      row.appendChild(el('span', 'cc', c.inn + ' / ' + c.total));
+      const mini = el('div', 'mini'), fill = document.createElement('i');
+      fill.style.width = (c.total ? Math.round(c.inn * 100 / c.total) : 0) + '%';
+      mini.appendChild(fill); row.appendChild(mini);
+      frag.appendChild(row);
+    });
+    $('teleClubs').replaceChildren(frag);
+    const at = rosterAt ? rosterAt.toLocaleTimeString('en-PH', { timeZone: 'Asia/Manila', hour: 'numeric', minute: '2-digit', second: '2-digit' }) : '';
+    $('teleStamp').textContent = at ? 'Updated ' + at : '';
+    status.hidden = !rosterFailed;
+    status.textContent = rosterFailed ? (keyProblem ? keyHelp() + ' ' : '') + 'Could not refresh — showing the figures from ' + at + '.' : '';
+  }
+
+  async function loadRoster() {
+    if (rosterBusy) return;
+    rosterBusy = true;
     try {
       const json = await getJson('?action=roster');
       totalRoster = json.attendees.length;
       checkedInFromRoster = json.attendees.filter(function (a) { return a.checkin_status === 'Checked-In'; }).length;
       rosterLoaded = true;
+      rosterSummary = summarize(json.attendees);
+      rosterAt = new Date(); rosterFailed = false;
       updateCount();
-    } catch (err) { /* counter simply keeps its last value */ }
+    } catch (err) {
+      rosterFailed = true; // the counter keeps its last value; the Attendance tab says the refresh failed
+    } finally {
+      rosterBusy = false;
+    }
+    renderTelemetry();
+  }
+  async function pollRoster() {
+    await loadRoster();
     setTimeout(pollRoster, CONFIG.ROSTER_REFRESH_MS);
   }
 
@@ -454,6 +778,7 @@
   wake();
 
   // ---- Init -----------------------------------------------------------------------------
+  adoptKey(); // a private #key=… link is stored before the first request goes out
   loadSnapshot(); // a refresh shows the last known wall immediately instead of a blank screen
   render();
   poll();

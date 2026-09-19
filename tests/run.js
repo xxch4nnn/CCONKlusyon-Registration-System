@@ -102,6 +102,12 @@ const SCANNER_EXPOSE = `
     requireStation: __opt(function () { return requireStation; }),
     validStation: __opt(function () { return validStation; }),
     checkBackend: __opt(function () { return checkBackend; }),
+    fetchRoster: __opt(function () { return fetchRoster; }),
+    adoptKeyFromLink: __opt(function () { return adoptKeyFromLink; }),
+    getKey: __opt(function () { return getKey; }),
+    resetManualPanel: function () { __opt(function () { setNameMode(false); manualPanel.hidden = true; manualBtn.textContent = '⌨️ Code / name'; }); },
+    resetKeyState: function () { __opt(function () { keyState = 'unknown'; renderKey(); }); },
+    get keyState() { return __opt(function () { return keyState; }); },
     resetBackendState: function () { __opt(function () { backendState = 'unknown'; backendVersion = null; renderBackend(); }); },
     get deviceId() { return deviceId; },
     // Re-read the station from storage (tests clear/seed localStorage, then call this).
@@ -148,7 +154,16 @@ runSuite('display.html (projector wall)', {
   // ---- test hooks (tests/run.js) ----
   window.__d = {
     CONFIG: CONFIG,
+    defaults: Object.assign({}, CONFIG),
+    ingest: ingest,
+    adoptKey: function () { return adoptKey(); },
+    spotQueueLength: function () { return spot.queue.length; },
     reset: function () {
+      try { Object.assign(CONFIG, window.__d.defaults); } catch (e) { /* */ }
+      try { resetSpotlight(); setTab('spotlight'); } catch (e) { /* older builds have no spotlight */ }
+      try { keyProblem = null; } catch (e) { /* older builds have no access key */ }
+      try { restartPolling(); } catch (e) { /* older builds */ } // every case starts on a fresh 4 s cycle, whatever back-off the last one left behind
+      try { rosterSummary = null; rosterFailed = false; rosterBusy = false; renderTelemetry(); } catch (e) { /* older builds have no attendance tab */ }
       try { store.clear(); heroEls.clear(); tileEls.clear(); } catch (e) { /* */ }
       try { lastFullAt = Date.now(); } catch (e) { /* older builds */ }
       try { checkedInFromRoster = 0; } catch (e) { /* */ }
@@ -158,6 +173,22 @@ runSuite('display.html (projector wall)', {
 ` + src.slice(at);
   },
   harness: path.join(__dirname, 'display', 'harness.js'), casesDir: path.join(__dirname, 'display', 'cases')
+});
+
+// ---- 4. roster-print.html (paper failsafe, D-6) ---------------------------------------------------
+const printHtml = path.resolve(opt('print') || path.join(root, 'roster-print.html'));
+runSuite('roster-print.html (paper failsafe roster)', {
+  html: printHtml, seed: null,
+  transform: (src) => {
+    const marker = '})();\n</script>';
+    const at = src.lastIndexOf(marker);
+    if (at < 0) throw new Error('roster-print script end marker not found');
+    return src.slice(0, at) + `
+  // ---- test hooks (tests/run.js) ----
+  window.__p = { CONFIG: CONFIG, load: load, adoptKey: function () { return adoptKey(); } };
+` + src.slice(at);
+  },
+  harness: path.join(__dirname, 'print', 'harness.js'), casesDir: path.join(__dirname, 'print', 'cases')
 });
 
 process.exit(failed ? 1 : 0);

@@ -6,17 +6,22 @@ Set `URL` to the current deployment (same value as `CONFIG.API_BASE` in `scanner
 
 ```bash
 URL='https://script.google.com/macros/s/<DEPLOYMENT_ID>/exec'
+KEY='<your access key>'   # Script property API_KEY — never commit it or paste it in chat
 
 # NOT_FOUND — code that does not exist
-curl -sL -X POST "$URL" -d '{"action":"checkin","attendance_code":"00000","device_id":"curl-test"}'
+curl -sL -X POST "$URL" -d '{"action":"checkin","attendance_code":"00000","device_id":"curl-test","key":"'"$KEY"'"}'
 
 # SUCCESS, then DUPLICATE — use a real code from Master_Attendance (writes to the sheet!)
-curl -sL -X POST "$URL" -d '{"action":"checkin","attendance_code":"<CODE>","device_id":"curl-test"}'
-curl -sL -X POST "$URL" -d '{"action":"checkin","attendance_code":"<CODE>","device_id":"curl-test"}'
+curl -sL -X POST "$URL" -d '{"action":"checkin","attendance_code":"<CODE>","device_id":"curl-test","key":"'"$KEY"'"}'
+curl -sL -X POST "$URL" -d '{"action":"checkin","attendance_code":"<CODE>","device_id":"curl-test","key":"'"$KEY"'"}'
 
 # Read-only feeds
-curl -sL "$URL?action=recent&limit=5"
+curl -sL "$URL?action=recent&limit=5&key=$KEY"
+curl -sL "$URL?action=roster&key=$KEY"
+
+# No key -> {"status":"ERROR","code":"UNAUTHORIZED",...}; ping is open and reports "secured" / "authorized"
 curl -sL "$URL?action=roster"
+curl -sL "$URL?action=ping&key=$KEY"
 ```
 
 Expected shapes are in [`docs/api-contract.md`](../docs/api-contract.md). A test check-in leaves the

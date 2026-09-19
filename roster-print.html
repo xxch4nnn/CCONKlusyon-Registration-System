@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCOnklusyon 2026 — Master Roster (paper failsafe)</title>
+<!--
+  CCOnklusyon Registration & Check-in System — Paper Failsafe Roster (D-6)
+  Epic 7 / Task 7.3.2 and spec §1.4: "a printed physical master roster sorted alphabetically by club with
+  5-digit PINs is kept at Usher Station 1 as an ultimate fallback."
+
+  Single-file HTML/JS/CSS, zero build step. Open it, wait for the table, press Ctrl+P (or the Print button).
+  Access key: the roster request carries the shared key (Code.gs refuses without it). Open this page once as
+  roster-print.html#key=… — it is stored in this browser and removed from the address bar.
+  Data: one GET ?action=roster (the same read-only endpoint the scanner caches). That endpoint deliberately
+  carries no email, and this page ignores every field it doesn't print. Nothing is stored anywhere — the
+  roster exists only in this tab and on the paper, so no attendee data ever lands in the (public) repo.
+
+  Print the FINAL roster after the last seat/PIN change: a paper copy does not update. Each print carries
+  its generated time so a stale copy is recognisable. The printout contains every attendance PIN — treat it
+  like cash: Usher Station 1 / Secretariat desk only.
+-->
+<style>
+  :root { --ink: #111827; --muted: #6B7280; --line: #D1D5DB; --shade: #EEF0F3; --blue: #1A56DB; --gold: #B8860B; }
+  * { box-sizing: border-box; }
+  body { margin: 0; color: var(--ink); background: #F4F6F8; font: 14px/1.4 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif; }
+  [hidden] { display: none !important; }
+
+  #toolbar { position: sticky; top: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; background: #fff; border-bottom: 1px solid var(--line); }
+  #toolbar b { margin-right: auto; }
+  #toolbar button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 6px; border: 1px solid var(--blue); background: var(--blue); color: #fff; cursor: pointer; }
+  #toolbar button.secondary { background: #fff; color: var(--blue); }
+
+  .page { max-width: 210mm; margin: 16px auto; padding: 14mm 12mm; background: #fff; border: 1px solid var(--line); }
+  .sheet-head h1 { margin: 0; font-size: 20px; }
+  .sheet-head .sub { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+  .sheet-head .meta { display: flex; flex-wrap: wrap; gap: 4px 18px; margin-top: 8px; font-size: 12px; }
+  .warn { margin: 10px 0; padding: 6px 10px; border: 1px solid var(--ink); font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+
+  #status { margin: 14px 0; padding: 10px 12px; border-radius: 6px; background: #FEF3C7; border: 1px solid #F59E0B; font-weight: 600; }
+  #status.err { background: #FEE2E2; border-color: #DC2626; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  thead { display: table-header-group; }
+  th { text-align: left; padding: 5px 6px; border-bottom: 2px solid var(--ink); font-size: 10.5px; letter-spacing: .06em; text-transform: uppercase; }
+  td { padding: 5px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  tr.group td { padding: 6px 6px 4px; background: var(--shade); border-bottom: 1px solid var(--ink); font-weight: 800; font-size: 12.5px; }
+  tr.group .n { font-weight: 500; color: var(--muted); margin-left: 6px; }
+  .tick { width: 28px; text-align: center; }
+  td.tick::before { content: ''; display: inline-block; width: 13px; height: 13px; border: 1.5px solid var(--ink); border-radius: 2px; vertical-align: middle; }
+  .name { font-weight: 700; }
+  .ticket { width: 64px; font-size: 11px; }
+  tr.vip .ticket { font-weight: 800; }
+  .seat { width: 110px; }
+  .pin { width: 74px; font: 800 15px/1 Consolas, 'Courier New', monospace; letter-spacing: .12em; text-align: right; }
+  .foot { margin-top: 14px; font-size: 11px; color: var(--muted); }
+
+  @page { margin: 12mm 10mm 14mm; @bottom-right { content: 'Page ' counter(page) ' of ' counter(pages); font-size: 9pt; } }
+  @media print {
+    body { background: #fff; font-size: 10pt; }
+    .no-print { display: none !important; }
+    .page { max-width: none; margin: 0; padding: 0; border: 0; }
+    tr { break-inside: avoid; page-break-inside: avoid; }
+    tr.group { break-after: avoid; page-break-after: avoid; }
+    tr.group td { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    #status { display: none !important; }
+  }
+</style>
+</head>
+<body>
+<div id="toolbar" class="no-print">
+  <b>Paper failsafe roster</b>
+  <button id="retry" class="secondary" type="button">Reload roster</button>
+  <button id="print" type="button">Print</button>
+</div>
+
+<main class="page">
+  <header class="sheet-head">
+    <h1>CCOnklusyon 2026 — Master Roster</h1>
+    <p class="sub">Paper failsafe · sorted by club, then name</p>
+    <div class="meta"><span id="summary"></span><span id="stamp"></span></div>
+    <div class="warn">Confidential — contains attendance PINs. Keep at Usher Station 1 / the Secretariat desk only.</div>
+  </header>
+
+  <div id="status" role="status">Loading the roster…</div>
+
+  <table id="sheet">
+    <thead><tr><th class="tick">&#10003;</th><th>Name / designation</th><th>Ticket</th><th>Seat</th><th style="text-align:right">PIN</th></tr></thead>
+    <tbody id="body"></tbody>
+  </table>
+
+  <p class="foot">If the scanner and the internet are both down: find the person, check the PIN, tick the box and note the time. Enter the ticks into the sheet afterwards. This copy does not update — compare the generated time above with the last roster change.</p>
+</main>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- CONFIG -----------------------------------------------------------------------
+  const CONFIG = {
+    // Must match scanner.html / display.html (the live /exec deployment).
+    API_BASE: 'https://script.google.com/macros/s/AKfycbyUZywdnh62McTK-FJwHlu5ltnrzWI6dnc1v1HMxNwG2PPM1vJO-xsXCz5T-rNrVPVi/exec',
+    FETCH_TIMEOUT_MS: 25000,
+    KEY_STORAGE: 'cco_access_key', // shared with scanner.html and display.html (same origin)
+    TIME_ZONE: 'Asia/Manila' // the event's GMT+8
+  };
+
+  const $ = function (id) { return document.getElementById(id); };
+  const VIP = 'VIP Pass';
+  let loadToken = 0;
+
+  function text(v) { return v === undefined || v === null ? '' : String(v).trim(); }
+  function el(tag, cls, txt) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (txt !== undefined) n.textContent = txt;
+    return n;
+  }
+  function seatText(v) { // 0 / blank is the sheet's "not assigned yet"
+    const t = text(v);
+    return (!t || /^(table\s*)?0+$/i.test(t)) ? '—' : t;
+  }
+  function compare(a, b) { return a.localeCompare(b, undefined, { sensitivity: 'base' }); }
+
+  // ---- Shared access key ------------------------------------------------------------
+  function accessKey() { try { return localStorage.getItem(CONFIG.KEY_STORAGE) || ''; } catch (e) { return ''; } }
+  function adoptKey() {
+    const m = /[#&]key=([^&]+)/.exec(location.hash || '');
+    if (!m) return false;
+    let k = m[1]; try { k = decodeURIComponent(m[1]); } catch (e) { /* keep raw */ }
+    try { localStorage.setItem(CONFIG.KEY_STORAGE, k); } catch (e) { /* storage blocked */ }
+    try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+    return true;
+  }
+  function keyHelp(code) {
+    if (code === 'KEY_NOT_SET') return 'The server has no access key set. In Apps Script run generateAccessKey, then redeploy.';
+    if (!accessKey()) return 'No access key on this device. Open this page once as roster-print.html#key=… (ask the tech lead), then reload.';
+    return 'The server rejected this device’s access key. Open this page once with the right #key=… on the end.';
+  }
+
+  // ---- Network ----------------------------------------------------------------------
+  async function fetchRoster() {
+    const ctrl = new AbortController();
+    const timer = setTimeout(function () { ctrl.abort(); }, CONFIG.FETCH_TIMEOUT_MS);
+    try {
+      const key = accessKey();
+      const res = await fetch(CONFIG.API_BASE + '?action=roster' + (key ? '&key=' + encodeURIComponent(key) : ''), { signal: ctrl.signal });
+      const json = await res.json();
+      if (json && json.status === 'SUCCESS' && Array.isArray(json.attendees)) return json.attendees;
+      if (json && json.status === 'ERROR' && (json.code === 'UNAUTHORIZED' || json.code === 'KEY_NOT_SET')) {
+        const e = new Error(keyHelp(json.code)); e.keyProblem = true; throw e;
+      }
+      throw new Error("the server replied '" + text(json && json.message) + "' — is the deployment up to date?");
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // ---- Rendering --------------------------------------------------------------------
+  function setStatus(msg, isError) {
+    const s = $('status');
+    s.hidden = !msg;
+    s.textContent = msg || '';
+    s.classList.toggle('err', !!isError);
+  }
+
+  function clearSheet() {
+    $('body').textContent = '';
+    $('summary').textContent = '';
+    $('stamp').textContent = '';
+  }
+
+  function render(list) {
+    const people = list
+      .filter(function (a) { return a && text(a.full_name); })
+      .map(function (a) {
+        return {
+          name: text(a.full_name), club: text(a.club_name), designation: text(a.designation),
+          vip: text(a.ticket_type) === VIP, seat: seatText(a.table_allocation), pin: text(a.attendance_code)
+        };
+      });
+
+    // Club-less people sort after every named club; grouping ignores case so "jci" and "JCI" are one club.
+    people.sort(function (a, b) {
+      if (!a.club !== !b.club) return a.club ? -1 : 1;
+      return compare(a.club, b.club) || compare(a.name, b.name);
+    });
+
+    const body = $('body');
+    body.textContent = '';
+    let groupKey = null, groupRow = null, groupCount = 0;
+    const closeGroup = function () { if (groupRow) groupRow.querySelector('.n').textContent = '(' + groupCount + ')'; };
+
+    people.forEach(function (p) {
+      const key = p.club.toLowerCase();
+      if (key !== groupKey) {
+        closeGroup();
+        groupKey = key; groupCount = 0;
+        groupRow = el('tr', 'group');
+        const td = el('td'); td.colSpan = 5;
+        td.appendChild(el('span', 'club', p.club || 'No club listed'));
+        td.appendChild(el('span', 'n', ''));
+        groupRow.appendChild(td);
+        body.appendChild(groupRow);
+      }
+      groupCount++;
+
+      const tr = el('tr', 'person' + (p.vip ? ' vip' : ''));
+      tr.appendChild(el('td', 'tick'));
+      const who = el('td');
+      who.appendChild(el('div', 'name', p.name));
+      if (p.designation) who.appendChild(el('div', 'role', p.designation));
+      tr.appendChild(who);
+      tr.appendChild(el('td', 'ticket', p.vip ? '★ VIP' : 'Regular'));
+      tr.appendChild(el('td', 'seat', p.seat));
+      tr.appendChild(el('td', 'pin', p.pin));
+      body.appendChild(tr);
+    });
+    closeGroup();
+
+    const vips = people.filter(function (p) { return p.vip; }).length;
+    $('summary').textContent = people.length + ' attendees · ' + vips + ' VIP · ' + (people.length - vips) + ' Regular';
+    $('stamp').textContent = 'Generated ' + new Date().toLocaleString('en-PH', { timeZone: CONFIG.TIME_ZONE, dateStyle: 'medium', timeStyle: 'short' });
+    return people.length;
+  }
+
+  // ---- Load -------------------------------------------------------------------------
+  async function load() {
+    const mine = ++loadToken;
+    setStatus('Loading the roster…', false);
+    let list;
+    try {
+      list = await fetchRoster();
+    } catch (err) {
+      if (mine !== loadToken) return;
+      clearSheet();
+      if (err && err.keyProblem) { setStatus(err.message, true); return; }
+      const why = err && err.name === 'AbortError' ? 'the server took too long' : (err && err.message) || 'network error';
+      setStatus('Could not load the roster (' + why + '). Check the connection and press "Reload roster".', true);
+      return;
+    }
+    if (mine !== loadToken) return; // a newer load superseded this one
+    const n = render(list);
+    if (!n) { clearSheet(); setStatus('No attendees to print — the roster is empty.', true); return; }
+    setStatus('', false);
+  }
+
+  adoptKey(); // a private #key=… link is stored before the first request goes out
+  $('retry').addEventListener('click', load);
+  $('print').addEventListener('click', function () { window.print(); });
+  load();
+})();
+</script>
+</body>
+</html>

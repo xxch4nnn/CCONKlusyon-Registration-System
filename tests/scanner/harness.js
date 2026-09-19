@@ -12,6 +12,8 @@
   let calls = [];
   let server = null;
   let pingHandler = null;
+  let rosterHandler = null;
+  const pings = [], rosters = []; // background requests, recorded so tests can inspect what was sent
 
   // ---- fake responses ---------------------------------------------------------------------
   const resp = (body, over) => Object.assign({
@@ -51,8 +53,8 @@
     else { action = (u.match(/action=([a-z]+)/) || [])[1]; code = decodeURIComponent((u.match(/attendance_code=([^&]*)/) || [])[1] || ''); }
     const rec = { method, action, code, url: u, body };
     // Background traffic the scanner makes on its own is answered but not counted as a "call".
-    if (action === 'ping') return pingHandler ? pingHandler(rec, init) : Promise.resolve(json({ status: 'SUCCESS', message: 'pong', version: 'test' }));
-    if (action === 'roster') return Promise.resolve(json({ status: 'SUCCESS', attendees: [] }));
+    if (action === 'ping') { pings.push(rec); return pingHandler ? pingHandler(rec, init) : Promise.resolve(json({ status: 'SUCCESS', message: 'pong', version: 'test' })); }
+    if (action === 'roster') { rosters.push(rec); return rosterHandler ? rosterHandler(rec, init) : Promise.resolve(json({ status: 'SUCCESS', attendees: [] })); }
     calls.push(rec);
     if (!server) return Promise.reject(new TypeError('no server'));
     return server(rec, init);
@@ -68,7 +70,9 @@
   const check = (name, cond, note) => results.push({ ok: !!cond, line: (cond ? 'PASS ' : 'FAIL ') + name + (note ? '  — ' + note : '') });
   const reset = () => {
     T.closeModal();
-    ['cco_offline_scans', 'cco_diag', 'cco_roster_cache'].forEach((k) => localStorage.removeItem(k));
+    ['cco_offline_scans', 'cco_diag', 'cco_roster_cache', 'cco_access_key'].forEach((k) => localStorage.removeItem(k));
+    try { T.resetKeyState(); } catch (e) { /* older builds have no access key */ }
+    try { T.resetManualPanel(); } catch (e) { /* older builds have no name search */ }
     T.writeQueue([]);
     T.resetScanState();
     T.settings.autoDismiss = true;
@@ -77,6 +81,8 @@
     calls = [];
     server = null;
     pingHandler = null;
+    rosterHandler = null;
+    pings.length = 0; rosters.length = 0;
   };
 
   window.h = {
@@ -84,6 +90,9 @@
     get calls() { return calls; },
     setServer(fn) { server = fn; },
     setPing(fn) { pingHandler = fn; },
+    setRoster(fn) { rosterHandler = fn; },
+    get pings() { return pings; },
+    get rosters() { return rosters; },
     codes() { return calls.filter((c) => c.action === 'checkin').map((c) => c.code); },
     // The camera decode callback. Falls back to onScanSuccess on builds that predate the decode guard,
     // which is exactly how the old scanner received raw decodes.

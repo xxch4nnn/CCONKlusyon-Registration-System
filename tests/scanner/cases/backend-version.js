@@ -29,6 +29,16 @@
     check('B2 the check is in the Connection log', T.readDiag().some((e) => e.label === 'ping GET'));
   });
 
+  test('B6 a pong with no version (a script older than the version marker) is also outdated', async () => {
+    if (typeof T.checkBackend !== 'function') { check('B6 hook exists', false); return; }
+    T.resetBackendState();
+    h.setPing(() => Promise.resolve(h.json({ status: 'SUCCESS', message: 'pong', ts: new Date().toISOString() })));
+    const state = await T.checkBackend();
+    check('B6 state outdated', state === 'outdated', state);
+    check('B6 red dot and warning shown', $('menuBtn').classList.contains('attn') && !$('backendWarn').hidden);
+    check('B6 note says OUTDATED, not "backend ?"', /OUTDATED/.test($('apiNote').textContent) && !/backend \?/.test($('apiNote').textContent), $('apiNote').textContent);
+  });
+
   test('B3 being offline / a timeout says nothing about the deployment (no false alarm, no change)', async () => {
     if (typeof T.checkBackend !== 'function') { check('B3 hook exists', false); return; }
     h.setPing(() => Promise.resolve(pong('2026-09-20.1'))); await T.checkBackend();

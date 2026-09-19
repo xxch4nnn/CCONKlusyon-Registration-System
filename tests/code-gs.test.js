@@ -9,14 +9,18 @@ const sheet={getDataRange:()=>({getValues:()=>rows}),getRange:(r,c)=>({setValue:
 const ctx={console:{log:m=>logs.push(m),error:m=>logs.push('ERR '+m)},JSON,Math,String,Date,Object,
  SpreadsheetApp:{getActiveSpreadsheet:()=>({getSheetByName:()=>sheet})},
  LockService:{getScriptLock:()=>({waitLock(){},releaseLock(){}})},
- Utilities:{formatDate:(d,tz,f)=>String(f).includes('yyyy')?new Date().toISOString().replace('Z','+00:00'):'TIME',sleep:ms=>{sleeps.push(ms)}},
+ Utilities:{getUuid:()=>'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>(Math.random()*16|0).toString(16)),formatDate:(d,tz,f)=>String(f).includes('yyyy')?new Date().toISOString().replace('Z','+00:00'):'TIME',sleep:ms=>{sleeps.push(ms)}},
  ContentService:{MimeType:{JSON:'json'},createTextOutput:t=>({getContent:()=>t,setMimeType(){return this}})},
  PropertiesService:{getScriptProperties:()=>({getProperty:k=>(props[k]==null?null:props[k]),setProperty:(k,v)=>{props[k]=v}})},
  UrlFetchApp:{fetch:(u,o)=>{fetches++;tgSent.push(o&&o.payload?JSON.parse(o.payload):null);const n=tgQueue.length?tgQueue.shift():{code:200};if(n.throw)throw new Error(n.throw);return{getResponseCode:()=>n.code,getContentText:()=>n.body!==undefined?n.body:JSON.stringify({ok:true,result:{date:Math.floor(Date.now()/1000)+1}})}}}};
-vm.createContext(ctx); vm.runInContext(src+'\nthis.doGet=doGet;this.doPost=doPost;this.auditRosterRows_=auditRosterRows_;this.buildVipAlertText_=typeof buildVipAlertText_=="function"?buildVipAlertText_:undefined;this.notifyVipTelegram_=notifyVipTelegram_;this.vipAlertReport=typeof vipAlertReport=="function"?vipAlertReport:undefined;this.handleSync_=handleSync_;this.formatAudit_=formatAudit_;this.resetTestCheckins=resetTestCheckins;',ctx);
+vm.createContext(ctx); vm.runInContext(src+'\nthis.doGet=doGet;this.doPost=doPost;this.auditRosterRows_=auditRosterRows_;this.buildVipAlertText_=typeof buildVipAlertText_=="function"?buildVipAlertText_:undefined;this.notifyVipTelegram_=notifyVipTelegram_;this.vipAlertReport=typeof vipAlertReport=="function"?vipAlertReport:undefined;this.handleSync_=handleSync_;this.formatAudit_=formatAudit_;this.resetTestCheckins=resetTestCheckins;this.generateAccessKey=typeof generateAccessKey=="function"?generateAccessKey:undefined;',ctx);
 const J=o=>JSON.parse(o.getContent());
-const post=(body,params)=>J(ctx.doPost({postData:{contents:typeof body==='string'?body:JSON.stringify(body)},parameter:params||{}}));
-const get=params=>J(ctx.doGet({parameter:params}));
+const KEY='test-key-0123456789ab'; props.API_KEY=KEY;
+const withKey=p=>Object.prototype.hasOwnProperty.call(p||{},'key')?(p||{}):Object.assign({key:KEY},p||{});
+const post=(body,params)=>J(ctx.doPost({postData:{contents:typeof body==='string'?body:JSON.stringify(body)},parameter:withKey(params)}));
+const get=params=>J(ctx.doGet({parameter:withKey(params)}));
+const postRaw=(body,params)=>J(ctx.doPost({postData:{contents:typeof body==='string'?body:JSON.stringify(body)},parameter:params||{}}));
+const getRaw=params=>J(ctx.doGet({parameter:params||{}}));
 let fail=0; const ok=(name,cond,extra)=>{console.log((cond?'PASS ':'FAIL ')+name+(extra?'  '+extra:'')); if(!cond)fail++;};
 
 ok('POST checkin (normal)', post({action:'checkin',attendance_code:'11111',device_id:'T1'}).status==='SUCCESS');
@@ -122,5 +126,41 @@ T4('E12',()=>{ reset4(); post({action:'checkin',attendance_code:'22222',device_i
 T4('E13',()=>{ reset4(); post({action:'checkin',attendance_code:'11111',device_id:'T'}); ok('E13 regular attendee: no alert', tgSent.length===0); post({action:'checkin',attendance_code:'22222',device_id:'T'}); const n=tgSent.length; post({action:'checkin',attendance_code:'22222',device_id:'T'}); ok('E13 duplicate VIP scan: no second alert', n===1&&tgSent.length===1); });
 T4('E14',()=>{ reset4(); delete props.TELEGRAM_BOT_TOKEN; const chk=post({action:'checkin',attendance_code:'22222',device_id:'T'}); ok('E14 not provisioned: check-in fine, no request, nothing logged', chk.status==='SUCCESS'&&tgSent.length===0&&!props.VIP_ALERT_LOG); });
 T4('E15',()=>{ const a=audit([H,Object.assign(good(1,'48201'),{8:'0'}),Object.assign(good(2,'48202'),{8:0}),Object.assign(good(3,'48203'),{8:'Table 0'})]); ok('E15 audit warns when table_allocation is 0 (unassigned)', a.warnings.filter(w=>w.field==='table_allocation').length===3, a.warnings.map(w=>w.field+':'+w.row).join()); });
+
+// ---- Shared access key (every data endpoint needs it; ping is open) ------------------------------------------------
+const T5=(name,fn)=>{try{fn()}catch(e){ok(name+' — threw',false,String(e&&e.message||e))}};
+T5('K1',()=>{ rows=mk(); delete props.API_KEY; fetches=0;
+  const rs=[postRaw({action:'checkin',attendance_code:'11111',device_id:'K'},{key:KEY}), getRaw({action:'checkin',attendance_code:'11111',device_id:'K',key:KEY}), getRaw({action:'recent',key:KEY}), getRaw({action:'roster',key:KEY}), postRaw({action:'sync',items:[{action:'checkin',attendance_code:'11111',device_id:'K'}]},{key:KEY})];
+  ok('K1 no key configured on the server: every data endpoint refuses (fail closed)', rs.every(r=>r.status==='ERROR'&&r.code==='KEY_NOT_SET'), rs.map(r=>r.code).join());
+  ok('K1 nothing was written', rows[1][10]===''); props.API_KEY=KEY; });
+T5('K2',()=>{ rows=mk(); fetches=0; tgSent.length=0; let all=true; const bad=[];
+  [undefined,'','wrong',KEY+'x',KEY.slice(0,-1),KEY.toUpperCase()].forEach(k=>{ const p=k===undefined?{}:{key:k};
+    [postRaw({action:'checkin',attendance_code:'22222',device_id:'K'},p), getRaw(Object.assign({action:'checkin',attendance_code:'22222',device_id:'K'},p)), getRaw(Object.assign({action:'recent'},p)), getRaw(Object.assign({action:'roster'},p)), postRaw({action:'sync',items:[{action:'checkin',attendance_code:'22222',device_id:'K'}]},p)]
+      .forEach(r=>{ if(!(r.status==='ERROR'&&r.code==='UNAUTHORIZED')){ all=false; bad.push(r.code||r.status); } }); });
+  ok('K2 missing / empty / wrong / near-miss keys are refused on every endpoint', all, bad.join());
+  ok('K2 refused requests write nothing and send no Telegram alert', rows[2][10]===''&&tgSent.length===0&&fetches===0); });
+T5('K3',()=>{ rows=mk();
+  ok('K3 key in the query string is accepted', postRaw({action:'checkin',attendance_code:'11111',device_id:'K'},{key:KEY}).status==='SUCCESS');
+  ok('K3 key inside the POST body is accepted', postRaw({action:'checkin',attendance_code:'33333',device_id:'K',key:KEY},{}).status==='SUCCESS');
+  ok('K3 GET check-in, recent and roster accept it', getRaw({action:'checkin',attendance_code:'99999',device_id:'K',key:KEY}).status==='NOT_FOUND'&&getRaw({action:'recent',key:KEY}).status==='SUCCESS'&&getRaw({action:'roster',key:KEY}).status==='SUCCESS');
+  const s=postRaw({action:'sync',key:KEY,items:[{action:'checkin',attendance_code:'22222',device_id:'K'}]},{});
+  ok('K3 sync accepts it (once for the whole batch)', s.status==='SUCCESS'&&s.results[0].status==='SUCCESS', JSON.stringify(s)); });
+T5('K4',()=>{
+  const a=getRaw({action:'ping'}), b=getRaw({action:'ping',key:KEY}), c=getRaw({action:'ping',key:'nope'});
+  ok('K4 ping stays open and reports whether a key is required', a.status==='SUCCESS'&&a.message==='pong'&&a.secured===true&&a.authorized===false, JSON.stringify(a));
+  ok('K4 ping says whether the supplied key is right', b.authorized===true&&c.authorized===false&&c.status==='SUCCESS');
+  ok('K4 ping never echoes the key', !JSON.stringify([a,b,c]).includes(KEY));
+  delete props.API_KEY; const d=getRaw({action:'ping',key:KEY}); ok('K4 ping on a server with no key set says so', d.secured===false&&d.authorized===false, JSON.stringify(d)); props.API_KEY=KEY;
+  ok('K4 unknown actions still answer "Unknown action." without a key', getRaw({action:'zzz'}).message==='Unknown action.'&&postRaw({action:'zzz'},{}).message==='Unknown action.'); });
+T5('K5',()=>{ logs.length=0; rows=mk();
+  postRaw({action:'checkin',attendance_code:'11111',device_id:'K'},{key:KEY}); getRaw({action:'roster',key:KEY}); getRaw({action:'recent',key:'wrong-key-value'}); postRaw({action:'sync',key:KEY,items:[]},{});
+  ok('K5 the key is never written to the execution log', !logs.some(l=>String(l).includes(KEY)||String(l).includes('wrong-key-value')), logs.join(' | ')); });
+T5('K6',()=>{ delete props.API_KEY; logs.length=0;
+  const r=ctx.generateAccessKey&&ctx.generateAccessKey();
+  ok('K6 generateAccessKey creates a key when none exists', !!r&&r.created===true&&/^[A-Za-z0-9]{20,}$/.test(props.API_KEY||''), String(props.API_KEY));
+  ok('K6 and shows it once, in the log, for the operator', logs.some(l=>String(l).includes(props.API_KEY)));
+  const first=props.API_KEY; logs.length=0; const r2=ctx.generateAccessKey();
+  ok('K6 never overwrites an existing key and does not print it again', r2.created===false&&props.API_KEY===first&&!logs.some(l=>String(l).includes(first)));
+  props.API_KEY=KEY; });
 
 console.log(fail?('\n'+fail+' FAILED'):'\nALL PASS'); process.exit(fail?1:0);

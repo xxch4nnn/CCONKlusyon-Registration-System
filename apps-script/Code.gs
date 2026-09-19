@@ -39,7 +39,7 @@
 
 // Bump on every change you deploy. `ping` reports it, and the scanner shows a warning if the deployed script is older
 // (editing this file in the Apps Script editor changes nothing for the phones until the DEPLOYMENT is moved to a new version).
-const BACKEND_VERSION = '2026-09-20.1';
+const BACKEND_VERSION = '2026-09-20.2';
 
 const SHEET_NAME = 'Master_Attendance';
 const COL = {
@@ -47,6 +47,39 @@ const COL = {
   TICKET_TYPE: 6, ATTENDANCE_CODE: 7, QR_URL: 8, TABLE_ALLOC: 9,
   PHOTO_URL: 10, CHECKIN_STATUS: 11, CHECKIN_TS: 12, CHECKED_IN_BY: 13
 };
+
+/**
+ * Shared access key. Every data endpoint (check-in, sync, recent, roster) requires it; `ping` stays open so a device can
+ * find out whether its key is right. The key lives ONLY in Script Properties (API_KEY) — never in this file or the repo —
+ * and each device is given it once (see AGENTS.md). Fail closed: with no key configured the data endpoints refuse.
+ * Run `generateAccessKey` once from the editor to create one.
+ */
+const KEY_PROP = 'API_KEY';
+function sameKey_(provided, expected) { // compares every character, so timing doesn't reveal how much matched
+  const a = String(provided == null ? '' : provided), b = String(expected);
+  let diff = a.length ^ b.length;
+  for (let i = 0; i < b.length; i++) diff |= (a.charCodeAt(i) || 0) ^ b.charCodeAt(i);
+  return diff === 0;
+}
+/** null when the request may proceed; otherwise the error response to send back. */
+function keyCheck_(provided) {
+  const expected = PropertiesService.getScriptProperties().getProperty(KEY_PROP);
+  if (!expected) return { status: 'ERROR', code: 'KEY_NOT_SET', message: 'The server has no access key set (Script property API_KEY).' };
+  if (!sameKey_(provided, expected)) return { status: 'ERROR', code: 'UNAUTHORIZED', message: 'Access key missing or wrong.' };
+  return null;
+}
+/** Run once from the editor: creates the access key if none exists and shows it in the log (editors only). */
+function generateAccessKey() {
+  const props = PropertiesService.getScriptProperties();
+  if (props.getProperty(KEY_PROP)) {
+    console.log('An access key is already set (Project settings -> Script properties -> ' + KEY_PROP + '). Nothing changed.');
+    return { created: false };
+  }
+  const key = (Utilities.getUuid() + Utilities.getUuid()).replace(/-/g, '').slice(0, 24);
+  props.setProperty(KEY_PROP, key);
+  console.log('ACCESS KEY (share only with your team, never in chat or the repo): ' + key);
+  return { created: true };
+}
 
 /**
  * Story 1.1: one-time credential generation for rows missing a code.
@@ -106,9 +139,13 @@ function doPost(e) {
 
   if (parseFailed && !action) return jsonOut_({ status: 'ERROR', message: 'Invalid JSON payload.' });
 
-  if (action === 'checkin') return handleCheckin_(mergeCheckinParams_(body, params));
-  if (action === 'sync') return handleSync_(body);
-  if (action === 'ping') return handlePing_();
+  const key = body.key || params.key;
+  if (action === 'ping') return handlePing_(key);
+  if (action === 'checkin' || action === 'sync') {
+    const denied = keyCheck_(key);
+    if (denied) return jsonOut_(denied);
+    return action === 'checkin' ? handleCheckin_(mergeCheckinParams_(body, params)) : handleSync_(body);
+  }
   return jsonOut_({ status: 'ERROR', message: 'Unknown action.' });
 }
 
@@ -117,6 +154,10 @@ function doGet(e) {
   const action = params.action;
   console.log('doGet action=' + action + ' params=' + Object.keys(params).join(','));
 
+  if (action === 'recent' || action === 'roster' || action === 'checkin') {
+    const denied = keyCheck_(params.key);
+    if (denied) return jsonOut_(denied);
+  }
   if (action === 'recent') {
     const limit = parseInt(params.limit, 10) || 12;
     return handleRecent_(limit);
@@ -125,7 +166,7 @@ function doGet(e) {
   // GET check-in: the scanner's fallback when a POST is downgraded/redirected and the body is lost.
   // Safe to repeat — the duplicate check under the script lock makes a second call a no-op.
   if (action === 'checkin') return handleCheckin_(mergeCheckinParams_({}, params));
-  if (action === 'ping') return handlePing_();
+  if (action === 'ping') return handlePing_(params.key);
   return jsonOut_({ status: 'ERROR', message: 'Unknown action.' });
 }
 
@@ -138,9 +179,10 @@ function mergeCheckinParams_(body, params) {
   };
 }
 
-/** Cheap no-op: lets the scanner warm the container and test the round trip without touching the sheet. */
-function handlePing_() {
-  return jsonOut_({ status: 'SUCCESS', message: 'pong', version: BACKEND_VERSION, ts: new Date().toISOString() });
+/** Cheap no-op: lets the scanner warm the container, test the round trip and check its key, without touching the sheet. */
+function handlePing_(key) {
+  const configured = !!PropertiesService.getScriptProperties().getProperty(KEY_PROP);
+  return jsonOut_({ status: 'SUCCESS', message: 'pong', version: BACKEND_VERSION, secured: configured, authorized: configured && keyCheck_(key) === null, ts: new Date().toISOString() });
 }
 
 /** Endpoint 1: check-in. */

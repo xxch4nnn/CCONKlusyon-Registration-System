@@ -33,13 +33,13 @@ the Epic/Story/Task detail and the QA gates are in [`sprint-backlog.md`](./sprin
 | 3.4 | Offline resilience | **Done** | Airplane-mode test passed |
 | 3.5 | Cross-device pass (iOS + Android) | **Deferred** | Android only so far; iOS waived for Gate 2 by the user, owed before Gate 5 |
 | 4.1 | Wire the live alert | **Built — not closed** (4.1.1 ✅, 4.1.2 ✅, 4.1.3 ⚠ old template live, 4.1.4 ⏳) | Code is done (4.1.2/4.1.3). 4.1.1 (bot + Script Properties) and 4.1.4 (alert timing) are yours and unverified; the live server still runs the old `Code.gs`, so the current code isn't deployed |
-| 5.1 | Build the wall | **Built** | One card per person, survives refresh, loading state (BUG-010/011) |
+| 5.1 | Build the wall | **Built** | Three tabs: Spotlight (audience, one at a time), Recent (everyone) and Attendance (secretariat counts); one card per person, survives refresh, loading state (BUG-010/011) |
 | 5.2 | Stability & display testing | **Not started** | 30-min soak and real 1080p/4K pending |
 | 6.1 | Staging setup | **Built (tooling)** | `auditRoster()` and `resetTestCheckins()` added; populating the real roster is user-side |
 | 6.2 | 7-test battery with CCO Councilmen | **Prepared** | Step-by-step runbook + pass criteria in `beta-runbook.md`; needs people and phones |
 | 6.3 | Triage | **Prepared** | Triage log template in `beta-runbook.md`; failures go to `bug-log.md` |
 | 7.1 | Data & script lockdown | **Built (tooling)** | `auditRoster()` flags duplicate/malformed PINs and live formulas; versioned deployment is a manual check |
-| 7.2–7.3 | Re-verification, production dispatch | **Not started** | |
+| 7.2–7.3 | Re-verification, production dispatch | **Partly built** | 7.3.2 paper roster tool built (`roster-print.html`); printing waits for the real roster. 7.2 and 7.3.1 not started |
 | 8.1–8.3 | Event day: pre-doors, live monitoring, close-out | **Not started** | |
 
 QA gates: **1 passed** · **2 passed with waiver** (iOS deferred by the user; see `bug-log.md`) · 3 next (needs Telegram credentials + real-projector check) · 4, 5 not reached.
@@ -63,5 +63,7 @@ QA gates: **1 passed** · **2 passed with waiver** (iOS deferred by the user; se
 | US-B13 | As the Secretariat, I want the wall to survive a browser refresh without going blank or losing arrivals. | BUG-011 | **Fixed (retest)** |
 | US-B14 | As an usher lead, I want the VIP alert to say the seat isn't assigned yet instead of "Table 0", and to flag scans that were queued offline, so an escort isn't misled. | BUG-013 | **Built** (needs redeploy) |
 | US-B15 | As the project lead, I want a report of how long the last 20 VIP alerts took (and whether any failed), so I can prove the 3 s target. | Story 4.1.4 | **Built** — `vipAlertReport()` (needs redeploy) |
+| US-B17 | As an usher, I want to find a guest by surname when their phone is dead and they cannot recite a PIN, and confirm before checking them in. | spec §1.2A / §1.4 | **Built** — needs a device test |
+| US-B18 | As the project lead, I want strangers who find the public repo to be unable to read the roster or check anyone in. | PIN-exposure decision | **Built** — access key; live after the roll-out in `HANDOFF.md` |
 | US-B16 | As the Secretariat, I want a failed Telegram send retried once (and never allowed to block a check-in), so a transient error doesn't lose a VIP alert. | Epic 4 | **Built** (needs redeploy) |
 | US-B17 | As the project lead, I want the scanner to tell me when the deployed server script is out of date, so a stale deployment never again looks like random "Unknown action." errors. | BUG-012 | **Built** — `ping` version + red dot/warning |

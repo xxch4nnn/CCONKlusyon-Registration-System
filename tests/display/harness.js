@@ -13,6 +13,9 @@
 
   let people = [];          // what the fake server considers "checked in"
   let pendingRows = 1;      // roster rows still Pending
+  let rosterRows = null;    // when set, the fake roster serves exactly these rows
+  let needKey = null;       // when a string, the fake server refuses any request without exactly this key
+  let keyNotSet = false;    // when true, the fake server answers KEY_NOT_SET
   let netDown = false;
   let calls = [];
   const person = (name, club, ts, over) => Object.assign({ full_name: name, club_name: club || 'CESA', designation: 'Delegate', ticket_type: 'Regular Attendee', table_allocation: 'Table 1', photo_url: '', checkin_timestamp: ts }, over || {});
@@ -22,12 +25,16 @@
     const u = String(url);
     const action = (u.match(/action=([a-z]+)/) || [])[1];
     const limit = +((u.match(/limit=(\d+)/) || [])[1] || 12);
-    calls.push({ action, limit });
+    const key = decodeURIComponent((u.match(/[?&]key=([^&]*)/) || [])[1] || '');
+    calls.push({ action, limit, key });
     if (netDown) return Promise.reject(new TypeError('network down'));
+    if (keyNotSet) return Promise.resolve(resp({ status: 'ERROR', code: 'KEY_NOT_SET', message: 'The server has no access key set (Script property API_KEY).' }));
+    if (needKey !== null && key !== needKey) return Promise.resolve(resp({ status: 'ERROR', code: 'UNAUTHORIZED', message: 'Access key missing or wrong.' }));
     if (action === 'recent') {
       const list = people.slice().sort((a, b) => Date.parse(b.checkin_timestamp) - Date.parse(a.checkin_timestamp));
       return Promise.resolve(resp({ status: 'SUCCESS', count: Math.min(limit, list.length), attendees: list.slice(0, limit) }));
     }
+    if (action === 'roster' && rosterRows) return Promise.resolve(resp({ status: 'SUCCESS', count: rosterRows.length, attendees: rosterRows }));
     if (action === 'roster') {
       const rows = people.map((p) => ({ full_name: p.full_name, checkin_status: 'Checked-In' }));
       for (let i = 0; i < pendingRows; i++) rows.push({ full_name: 'Pending ' + i, checkin_status: 'Pending' });
@@ -39,14 +46,52 @@
   const cards = () => Array.from(document.querySelectorAll('#hero .card, #grid .card'));
   const names = () => cards().map((c) => c.querySelector('.name').textContent);
   const reset = () => {
-    people = []; pendingRows = 1; netDown = false; calls = [];
+    people = []; pendingRows = 1; netDown = false; calls = []; rosterRows = null; needKey = null; keyNotSet = false;
+    try { localStorage.removeItem('cco_access_key'); } catch (e) { /* ignore */ }
     try { sessionStorage.clear(); } catch (e) { /* ignore */ }
     try { D.reset(); } catch (e) { /* older builds have no reset hook */ }
   };
 
+  // ---- Spotlight tab helpers ----
+  const spotEl = () => document.querySelector('#spotStage .card.spot');
+  const spot = () => {
+    const c = spotEl(); if (!c) return null;
+    const t = (s) => { const n = c.querySelector(s); return n ? n.textContent.replace(/\s+/g, ' ').trim() : ''; };
+    return {
+      name: t('.name'), role: t('.role'), club: t('.club'), table: t('.table'), badge: t('.badge'),
+      vip: c.classList.contains('vip'), reg: c.classList.contains('reg'), typo: c.classList.contains('typo'),
+      svg: !!c.querySelector('svg.avatar'), img: !!c.querySelector('img.avatar'),
+      count: document.querySelectorAll('#spotStage .card.spot').length
+    };
+  };
+
   window.h = {
     D, check, sleep, cards, names, person, calls: () => calls,
+    spot,
+    ambientShown: () => !$('ambient').hidden,
+    ambientText: () => $('ambient').textContent.replace(/\s+/g, ' ').trim(),
+    viewShown: (id) => !$(id).hidden,
+    selectedTab: () => Array.from(document.querySelectorAll('.tabs button')).filter((b) => b.getAttribute('aria-selected') === 'true').map((b) => b.id).join(','),
+    key: (k) => document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true })),
+    ingest: (list) => D.ingest(list, true, false), // a live arrival (animated), not the silent first load
+    queueLen: () => D.spotQueueLength(),
     setPeople(list) { people = list; },
+    setRoster(rows) { rosterRows = rows; },
+    requireKey(k) { needKey = k; },
+    setKeyNotSet(v) { keyNotSet = !!v; },
+    keysSent: () => calls.map((c) => c.key),
+    liveText: () => document.getElementById('liveText').textContent.replace(/\s+/g, ' ').trim(),
+    rosterCalls: () => calls.filter((c) => c.action === 'roster').length,
+    tele() {
+      const t = (id) => { const n = $(id); return n ? n.textContent.replace(/\s+/g, ' ').trim() : null; };
+      return {
+        inn: t('teleIn'), all: t('teleAll'), pct: t('telePct'), fill: $('teleFill') ? $('teleFill').style.width : null,
+        now: $('teleBar') ? $('teleBar').getAttribute('aria-valuenow') : null,
+        vip: $('teleVip') ? t('teleVip') : null, reg: $('teleReg') ? t('teleReg') : null, pending: $('telePending') ? t('telePending') : null,
+        clubs: Array.from(document.querySelectorAll('#teleClubs .club-row')).map((r) => ({ name: r.querySelector('.cn').textContent.trim(), count: r.querySelector('.cc').textContent.replace(/\s+/g, ' ').trim() })),
+        status: t('teleStatus'), stamp: t('teleStamp'), text: $('viewTelemetry') ? $('viewTelemetry').innerText : ''
+      };
+    },
     getPeople() { return people; },
     setNetDown(v) { netDown = v; },
     // Wait long enough for a normal poll (4 s) — or a periodic full refresh (> 60 s) when `full` is true.
