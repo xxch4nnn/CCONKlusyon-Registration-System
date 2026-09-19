@@ -32,8 +32,8 @@ the Epic/Story/Task detail and the QA gates are in [`sprint-backlog.md`](./sprin
 | 3.3 | Manual PIN fallback | **Done** | |
 | 3.4 | Offline resilience | **Done** | Airplane-mode test passed |
 | 3.5 | Cross-device pass (iOS + Android) | **Deferred** | Android only so far; iOS waived for Gate 2 by the user, owed before Gate 5 |
-| 4.1 | Wire the live alert | **Built** | 4.1.1 (bot + Script Properties) and 4.1.4 (timing) are user-side |
-| 5.1 | Build the wall | **Built** | |
+| 4.1 | Wire the live alert | **Built — not closed** | Code is done (4.1.2/4.1.3). 4.1.1 (bot + Script Properties) and 4.1.4 (alert timing) are yours and unverified; the live server still runs the old `Code.gs`, so the current code isn't deployed |
+| 5.1 | Build the wall | **Built** | One card per person, survives refresh, loading state (BUG-010/011) |
 | 5.2 | Stability & display testing | **Not started** | 30-min soak and real 1080p/4K pending |
 | 6.1 | Staging setup | **Built (tooling)** | `auditRoster()` and `resetTestCheckins()` added; populating the real roster is user-side |
 | 6.2 | 7-test battery with CCO Councilmen | **Prepared** | Step-by-step runbook + pass criteria in `beta-runbook.md`; needs people and phones |
@@ -56,3 +56,8 @@ QA gates: **1 passed** · **2 passed with waiver** (iOS deferred by the user; se
 | US-B06 | As the project lead, I want to audit the roster before the beta and before go-live (unique fixed PINs, no live formulas, complete rows), so I don't send 300 passes with a bad row. | — (Epic 6.1 / 7.1) | **Built** — `auditRoster()` |
 | US-B07 | As the project lead, I want to reset just the beta rows between test rounds, safely, so I can repeat a failing test. | — (Epic 6.3) | **Built** — `resetTestCheckins()` (max 30 codes, explicit list) |
 | US-B08 | As the project lead, I want a step-by-step beta runbook with pass criteria and an evidence trail, so the 7-test battery is repeatable. | — (Epic 6.2) | **Built** — `beta-runbook.md` |
+| US-B09 | As an usher lead, I want every scanner to be named before it can scan, so each check-in is attributable to a station. | BUG-007 | **Fixed (retest)** — mandatory in-page gate |
+| US-B10 | As an usher, I want only a pass held inside the on-screen frame to scan, so stray QR codes in view don't check anyone in. | BUG-008 | **Fixed (retest)** — verified with a fake-camera test |
+| US-B11 | As an usher, I want every result card to say which pass it's about and to see when a check is still in progress, so a late card is never a mystery. | BUG-009 | **Built** — pass code on cards, "Checking…" chip, 8 s timeouts |
+| US-B12 | As an attendee, I want to appear on the projector wall once, even if I'm checked in again during testing. | BUG-010 | **Fixed (retest)** |
+| US-B13 | As the Secretariat, I want the wall to survive a browser refresh without going blank or losing arrivals. | BUG-011 | **Fixed (retest)** |

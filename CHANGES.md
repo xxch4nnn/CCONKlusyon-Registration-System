@@ -5,6 +5,22 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-19 — Station gate, scan-only-inside-frame, card attribution, wall fixes (audit-first)
+**By:** user (device reports) + Claude
+**Reports:** station-name prompt missing on first run and not mandatory; a QR outside the scan box still scanned; a "duplicate" with no first card, 10/10 pop-ups, a
+"May already be checked in" card while facing a wall; `display.html` showing duplicate cards; refreshing the wall "deleting all records". All logged as BUG-007…011.
+**Audit first — read-only checks of the live system:** `?action=ping` → *Unknown action* ⇒ **the new `Code.gs` has never been deployed** (so the GET retry, lost-reply
+recovery, `auditRoster`, etc. are not live). Pass 61765 was already Checked-In at 21:10:23. The sheet itself is intact (the wall only reads).
+**Test infrastructure:** `tests/run.js` now runs four suites — Apps Script mocks, scanner (station preset), scanner **fresh install** (nothing saved), and the **wall** —
+and `tests/camera.js` decodes real QR frames from a fake camera (`tests/camera/clips`, regenerate with `make-clips.py`). Each bug's tests were written and run
+against the old code first: station gate 11/11 failing, card attribution 12/13, wall 6 failing, camera: outside-frame QRs scanned.
+**Fixes:** `scanner.html` — mandatory in-page station gate; video sized to the stream aspect + `qrbox` = on-screen frame (scans only inside it); `PASS <code>` on every card,
+"Checking <code>…" chip, request timeout 8 s, honest wording for unconfirmed replies. `display.html` — one card per person (update in place on re-check-in), full
+re-read every 60 s to drop reset rows, sessionStorage snapshot restored instantly on refresh, "Loading arrivals…" state, counter follows the sheet.
+**Results:** Apps Script 36/36, scanner 114/114, fresh-install 42/42, wall 17/17, camera 11/11. **None of it is device-verified yet.**
+**Not fixed / blocked:** BUG-005 (unconfirmed replies) is unproven and blocked on the `Code.gs` redeploy plus your Connection log.
+**Status of Epic 4:** code complete but **not closed** (4.1.1 and 4.1.4 unverified; deployed code is old).
+
 ## 2026-09-19 — BUG-001 verified; BUG-003/004 fixed test-first; Gate 2 passed with waiver; Epic 6/7 tooling
 **By:** user (device result + go-ahead) + Claude
 **Gate:** BUG-001 confirmed fixed on device. The user can't do the iOS pass right now, so **QA Gate 2 is recorded as passed

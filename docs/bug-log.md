@@ -65,6 +65,59 @@ untested — including the new full-screen camera layout, the vibration fallback
 - **Next:** measure on device in beta test 6.2.2 with the Connection log (records ms per request); consider GET-first
   check-ins if the redirect adds a hop. **Status:** **Logged.**
 
+### BUG-007 — Station name prompt doesn't appear on the first run (and wasn't mandatory)
+- **Reported:** "The station name prompt at the start isn't appearing on the first pass. It should be mandatory."
+- **Root cause (by code read; the exact device path is unconfirmed):** the station name came from `window.prompt()`. Browsers can suppress or
+  auto-dismiss it, **Cancel saved `Unassigned-Station` permanently** (so it never asked again), and nothing stopped scanning without a name.
+- **Audit-first:** 8 new fresh-install tests failed 11/11 on the old build (there was no gate at all).
+- **Fix:** an in-page **Name this station** gate that cannot be dismissed on first run; camera start, scanning and manual entry are blocked until a valid
+  name (2–24 letters/digits/space/`-_.`, not `Unassigned-Station`, `Unknown`, …) is saved. A legacy saved `Unassigned-Station` counts as unset.
+  "Change station name" reuses the gate (Cancel allowed). Tests F1–F8.
+- **Status:** **Fixed (needs device retest).** Retest: clear the site's data (or open in a private tab) → the gate must appear before the camera does.
+
+### BUG-008 — A QR outside the on-screen frame still scans
+- **Reported:** "I tried scanning the QR for 61765 outside the box of the scanner yet it scanned."
+- **Root cause (confirmed, reproduced):** my Sept 19 UI rewrite dropped the scan box (`qrbox`) and decoded the whole camera frame. The library maps its box
+  using the video element's *layout* size, so a cropped (`object-fit: cover`) video can't be combined with a box — I removed the box instead of fixing the geometry.
+- **Audit-first:** new **fake-camera test** (`node tests/camera.js`: headless Edge with a looped MJPEG of a QR at known positions, real decoding). Against the
+  previous scanner: QRs *outside* the frame scanned (`outside_below`, `outside_corner`) — the exact report.
+- **Fix:** the video is now sized to the stream's own aspect ratio, scaled to cover and centred; the library gets a `qrbox` equal to the frame drawn on screen
+  (one shared size, `--reticle`). Result: 11/11 camera checks pass in a square and a tall window.
+- **Known limit:** a height-only viewport change while running (offline banner appearing, on-screen keyboard) shifts the scan region by about half the change until
+  the camera restarts; a width change (rotation) restarts the camera automatically. Not device-verified.
+- **Status:** **Fixed (needs device retest).** Retest: hold a pass well outside the frame (corners/edges of the picture) — nothing should happen; inside the frame — scans.
+
+### BUG-009 — "May already be checked in" cards, 10/10 pop-ups, pass 61765 "didn't record", card while pointing at a wall
+- **Reported:** in a 10-pass trial every scan popped up but 61765 didn't record; a "MAY ALREADY BE CHECKED IN" card appeared twice while the camera faced a wall.
+- **Audit findings (read-only checks of the live sheet/server):**
+  1. **61765 was already `Checked-In` at 21:10:23** — a later scan of it can only be a duplicate; it can't "record" again. (Reset the row in the sheet first.)
+  2. "MAY ALREADY BE CHECKED IN" is the **unconfirmed** card: the server never gave a definitive answer, so the scanner fell back to its cached roster — which still
+     said Checked-In. It is not a server verdict.
+  3. **The live server is still the old `Code.gs`** (`?action=ping` → "Unknown action."), so the GET-retry fallback and lost-reply recovery from earlier this session
+     **cannot work yet**. This is the main reason unconfirmed cards keep appearing (BUG-005 unresolved).
+  4. Worst-case time to a card was ~24 s (POST 12 s + GET 12 s), so a card could appear long after the scan, when the camera is already on something else.
+  5. All 10 rows were Checked-In in the roster cache; after a sheet reset the phone's cache is stale for up to 5 min.
+- **Fixes (client-side; tests L1–L5):** every card now shows **`PASS <code>`**; a **"Checking <code>…"** chip is visible from scan to card; request timeout 12 s → **8 s**
+  (worst case 16 s); unconfirmed + cached "checked in" now reads **"NOT CONFIRMED — ROSTER SAYS CHECKED IN"** with a note that the roster copy may be out of date.
+- **Still needs you:** redeploy `Code.gs`, then send the **Settings → Connection log** (Copy) after a bad run — it shows whether the POST arrived as a GET.
+- **Status:** **Mitigated** (attribution/latency/wording fixed; underlying unconfirmed replies = BUG-005, blocked on the redeploy + log).
+
+### BUG-010 — display.html shows duplicate cards
+- **Reported:** "display.html displays duplicate cards when it shouldn't."
+- **Root cause (reproduced):** cards were keyed by *name + timestamp* and never removed. The same person checking in again (row reset for testing) or the sheet writing the
+  same instant in another format (`+08:00` vs `Z`) created a second card, and reset rows stayed forever.
+- **Audit-first:** 9 wall tests failed 6 checks on the old build (`Ana Reyes | Ben Cruz | Ana Reyes`).
+- **Fix:** one card per **person** (name + organisation); a later check-in replaces and re-animates the card; once a minute the wall re-reads the full list and drops
+  anyone no longer checked in; the counter follows the sheet. **Status:** **Fixed (needs device retest).**
+
+### BUG-011 — Refreshing display.html "deletes all records"
+- **Reported:** "refreshing display.html deletes all record."
+- **Audit:** the sheet is intact (read-only check: 10 rows, 9 Checked-In, 1 Pending) and the wall only issues `GET`s — it cannot delete anything. What you see is a **blank wall
+  for ~2.4–3 s** after every refresh (the `recent` call takes that long), showing "Welcome…" as if nobody had checked in.
+- **Fix:** the wall keeps its last state in the tab's session storage and repaints it instantly after a refresh, then reconciles with the sheet; before the first answer an empty
+  wall says **"Loading arrivals…"**, not "Welcome". **Status:** **Fixed (needs device retest).** (Session storage is cleared when the tab closes.)
+
 ## Open verification items
 iOS Safari + Android Chrome pass (Story 3.5 — waived for Gate 2, owed before Gate 5); noisy-room audibility (3.2.3);
-Telegram alert timing (4.1.4); projector wall on real 1080p/4K + 30-min soak (5.2.2/5.2.3); device retest of BUG-002/003/004.
+Telegram alert timing (4.1.4); projector wall on real 1080p/4K + 30-min soak (5.2.2/5.2.3); device retest of BUG-002/003/004/007/008/009/010/011;
+**redeploy of the new `Code.gs`** (live server still old as of 2026-09-19 — `?action=ping` returns Unknown action).

@@ -32,6 +32,8 @@ is only the top-level status snapshot.
 
 ## Do next (user-side — nothing here can be done from a Claude session)
 
+0. **URGENT — the live server is still the OLD `Code.gs`** (`?action=ping` → "Unknown action." on 2026-09-19). Until it is redeployed the scanner's GET retry
+   and lost-reply recovery can't work and "unconfirmed" cards keep appearing. Then, after a bad run, **Settings → Connection log → Copy** and send it.
 0. **Redeploy `Code.gs`** (adds `auditRoster`, `resetTestCheckins`, GET check-in, `ping`), then run `auditRoster` in the editor and
    fix any ERRORS. Then follow `docs/beta-runbook.md` (Epic 6) once Telegram is provisioned.
 
@@ -51,9 +53,10 @@ is only the top-level status snapshot.
 
 ## Open items
 
-- **QA Gate 2: passed with waiver** — iOS Safari pass deferred by the user (owed before Gate 5). BUG-001 verified on device;
-  BUG-003/004 fixed test-first but **need a phone retest** (empty space / posters for a few minutes → nothing should pop up).
-  See `docs/bug-log.md` and `docs/user-stories.md`. Run `node tests/run.js` before any push.
+- **QA Gate 2: passed with waiver** (iOS deferred). New device reports were fixed test-first and **all need a phone/laptop retest**: BUG-003/004 (phantom pop-ups),
+  BUG-007 (station gate — clear site data, it must appear before the camera), BUG-008 (only scans inside the frame), BUG-009 (pass code on cards, "Checking…" chip),
+  BUG-010/011 (wall: one card per person, survives refresh). See `docs/bug-log.md`. Run `node tests/run.js` and `node tests/camera.js` before any push.
+- **Epic 4 is not closed**: code done, but 4.1.1/4.1.4 unverified and the deployed script is old.
 - **"Unknown action." on the first scan — mitigated, root cause unproven.** Hardening + a Connection log
   shipped (see the Sept 19 `CHANGES.md` entry). Needs: redeploy `Code.gs`, then the 10-scan trial in
   `tests/README.md`. If the log confirms a POST→GET downgrade, flip check-in to GET-primary.

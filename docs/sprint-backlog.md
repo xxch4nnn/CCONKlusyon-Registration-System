@@ -97,7 +97,7 @@ Covers Epics 2 + 3 together, once both are built — this is the full attendee j
 
 ## 4. Epic: Telegram VIP Relay (D-4)
 
-**Status: CODE COMPLETE, awaiting credentials (2026-09-19).** 4.1.2/4.1.3 done in `Code.gs` (alert sent after the lock is released; template per spec). 4.1.1 is user-side; 4.1.4 needs a VIP test row. Run `testTelegramPing()` then `testVipAlertTemplate()` in the Apps Script editor after adding the Script Properties, then redeploy as a new version of the existing deployment.
+**Status: CODE COMPLETE, NOT CLOSED (2026-09-19).** Story 4.1.4 (time a real VIP alert) hasn't happened, 4.1.1 (bot + Script Properties) is unconfirmed, and the live deployment is still the *old* `Code.gs`. Original note: code complete, awaiting credentials. 4.1.2/4.1.3 done in `Code.gs` (alert sent after the lock is released; template per spec). 4.1.1 is user-side; 4.1.4 needs a VIP test row. Run `testTelegramPing()` then `testVipAlertTemplate()` in the Apps Script editor after adding the Script Properties, then redeploy as a new version of the existing deployment.
 
 **4.1 Story — Wire the live alert**
 - 4.1.1 You: create bot via @BotFather, add as Admin to Usher Leadership group, retrieve chat_id — paste both into ScriptProperties yourself (never shared in chat)

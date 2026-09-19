@@ -108,7 +108,9 @@ docs/
 tests/
   run.js                dependency-free test runner (Node + headless Edge/Chrome)
   code-gs.test.js       Code.gs against mocked Apps Script
-  scanner/              scanner.html harness + cases (decode / scan guards / retry-sync)
+  scanner/              scanner.html harness: cases/ (station preset) and fresh/ (nothing saved)
+  display/              display.html (wall) harness + cases
+  camera.js, camera/    fake-camera decode test (scan only inside the frame) + MJPEG clips
   README.md             how to run the suite + manual curl/device checks
 ```
 The frontend HTML files stay at the repo root so GitHub Pages serves them without extra
