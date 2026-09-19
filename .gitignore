@@ -9,3 +9,6 @@ Thumbs.db
 # Secrets: never commit (bot tokens live in Apps Script ScriptProperties)
 .env
 *.key
+
+# Extracted planning docs (contain named individuals) — local reference only
+docs/private/

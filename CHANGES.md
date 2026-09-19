@@ -5,6 +5,21 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-19 — Handoff, MVP spec and sprint backlog extracted into the repo
+**By:** user (supplied the docs) + Claude
+**What:** added `HANDOFF.md`, `docs/mvp-spec.md` (Part 1 client + Part 2 technical, from the
+Project Management dossier .docx) and `docs/sprint-backlog.md` (from `Sprint Backlog & QA
+Gates.docx`). Google Docs equation images (times, limits, PHP amounts) don't survive a plain text
+export, so they were read from the embedded images and restored; a few were cropped in the source
+and inferred from context.
+**Public-repo scrub:** the repo is public and the dossier names real students/advisers (roster
+audit) and the spec's samples used a real name and `@usep.edu.ph` address. Those samples were
+replaced with fictional values in `docs/mvp-spec.md`. The full PM dossier and SDLC Stages 1-3 were
+extracted to `docs/private/` and **gitignored** — local reference only.
+**Deviations flagged** at the top of `mvp-spec.md` (13 columns vs A-L, status values, bare 5-digit
+QR payload vs `CCO-XXXXX`, added `roster` endpoint).
+**Impact:** docs only, no code change.
+
 ## 2026-09-19 — Repo restructured: `apps-script/`, `docs/`, `tests/`
 **By:** user (target layout) + Claude
 **What:** moved `Code.gs` and `EmailBlaster.gs` into `apps-script/`; added `docs/api-contract.md`

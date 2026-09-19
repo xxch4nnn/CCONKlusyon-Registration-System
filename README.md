@@ -15,6 +15,9 @@ decision log (why things are the way they are).
 | `apps-script/Code.gs` | Backend gateway — check-in, offline-sync flush, recent-arrivals feed, roster cache feed, VIP Telegram alert stub | Google Apps Script (Web App) |
 | `apps-script/EmailBlaster.gs` | Entry-pass email sender, plus a generic reusable blast engine for any other event email | Google Apps Script |
 | `scanner.html` | Usher-facing door scanner — camera QR scan, manual code fallback, offline queue, audio/visual feedback | Static, served via GitHub Pages |
+| `HANDOFF.md` | Current status snapshot — what's built, what's next, open items | — |
+| `docs/mvp-spec.md` | Original MVP spec (client + technical), with deviations noted at the top | — |
+| `docs/sprint-backlog.md` | Epic / Story / Task backlog and the 5 QA gates | — |
 | `docs/api-contract.md` | `checkin` / `sync` / `recent` / `roster` request and response shapes | — |
 | `docs/db-schema.md` | The 13-column `Master_Attendance` schema | — |
 | `tests/README.md` | curl contract checks against the deployed `/exec` URL | — |

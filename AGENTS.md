@@ -20,10 +20,9 @@ when it happens.
 - **Duplicate scans:** must be atomically blocked, never double-counted.
 
 ## Live infrastructure (as confirmed, not assumed)
-- **GitHub repo:** `xxch4nnn/CCONKlusyon-Registration-System`. Claude's git-push proxy needs this
-  repo added to the session's authorized repository set before Claude can push directly — until
-  then, code changes ship as files for the user to commit/upload themselves (as has been the
-  workflow through Epics 1-3).
+- **GitHub repo:** `xxch4nnn/CCONKlusyon-Registration-System` (**public**, branch `main`). A local
+  Claude Code session on the user's machine can commit and push directly (as of Sept 19; the
+  earlier cloud sessions could not and shipped files for manual upload).
 - **Working workbook:** `1memjsk0qCcFqAdL5yMXAYU0iFf5OkGk1cwg0e56FbOY`
   - **Registration DB tab:** `Master_Attendance` (gid=155323925) — the only tab Claude may write to
     (via Apps Script the user deploys — Claude does not write to any Sheet directly).
@@ -77,6 +76,7 @@ Full request/response shapes: [`docs/api-contract.md`](./docs/api-contract.md). 
 CLAUDE.md               thin pointer to this file
 AGENTS.md               canonical project rules (this file)
 CHANGES.md              decision log
+HANDOFF.md              status snapshot for whoever picks the project up next
 README.md               overview + deploy steps
 scanner.html            Usher Scanner PWA (Epic 3) — root, so GitHub Pages serves it
 display.html            projector wall (Epic 5) — not built yet, will live at root beside scanner.html
@@ -84,14 +84,17 @@ apps-script/
   Code.gs               backend gateway (paste into the workbook's bound Apps Script project)
   EmailBlaster.gs       entry-pass emails + generic blast engine
 docs/
+  mvp-spec.md           original MVP spec (Sept 13 snapshot; deviations noted at the top)
+  sprint-backlog.md     Epic/Story/Task backlog + the 5 QA gates
   api-contract.md       endpoint request/response shapes
   db-schema.md          Master_Attendance columns A-M
+  private/              gitignored, local only: PM dossier + SDLC stages 1-3 (name real people)
 tests/
   README.md             curl contract checks
 ```
 The frontend HTML files stay at the repo root so GitHub Pages serves them without extra
-configuration. `docs/mvp-spec.md` (the original spec) is not in the repo yet — the source is the
-Google Docs handoff linked above.
+configuration. The repo is **public**: never commit attendee names, emails, or roster data — the
+spec's sample values were replaced with fictional ones, and `docs/private/` is in `.gitignore`.
 
 ## Apps Script gotchas (worth remembering)
 - Any top-level function named with a trailing underscore (e.g. `handleCheckin_`) is treated as
@@ -107,8 +110,7 @@ Google Docs handoff linked above.
 
 ## What Claude can/cannot touch directly
 - Can read: GitHub (public clone, always), the whole workbook, all linked Docs, Drive folder.
-- Can write: the GitHub repo, once it's added to this session's authorized repository set (ask
-  the user to add it under their environment/session's connected sources); nothing directly in
+- Can write: the GitHub repo (from a local session with push access); nothing directly in
   any Sheet — all Sheet/Apps Script changes still ship as files for the user to paste in and
   deploy, since Claude has no Apps Script execution access regardless of GitHub access.
 - Cannot access at all: Telegram bot token/channel, Apps Script execution/deployment.
