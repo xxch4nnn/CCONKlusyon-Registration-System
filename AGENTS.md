@@ -55,6 +55,8 @@ Code targets the real sheet, not the idealized one.
 | M | `checked_in_by` | Device/station id passed in the checkin payload |
 
 ## API contract (per spec — do not change field names/shapes without updating this file)
+Full request/response shapes: [`docs/api-contract.md`](./docs/api-contract.md). Schema:
+[`docs/db-schema.md`](./docs/db-schema.md).
 - `POST /api/checkin` — `{action:"checkin", attendance_code, device_id}` → `SUCCESS` \| `DUPLICATE` \| `NOT_FOUND`
 - `POST /api/sync` — `{action:"sync", items:[...]}` — bulk offline-queue flush
 - `GET /api/recent?limit=N` — `{action:"recent"}` — feeds the projector wall
@@ -71,18 +73,37 @@ Code targets the real sheet, not the idealized one.
   installability).
 
 ## Repo structure
-Currently flat (`Code.gs`, `EmailBlaster.gs`, `scanner.html` all at repo root) — the user uploaded
-directly via GitHub's web UI rather than through a `git push` from Claude (session's git-push
-proxy doesn't have this repo authorized yet). Fine as-is for now: only two backend files, and
-GitHub Pages serves the frontend straight from root either way. Revisit moving the `.gs` files
-into an `apps-script/` folder once Epic 4 (Telegram) or Epic 5 (projector wall / `display.html`)
-adds enough files that a flat root gets noisy — not before, per "improvise only when necessary."
+```
+CLAUDE.md               thin pointer to this file
+AGENTS.md               canonical project rules (this file)
+CHANGES.md              decision log
+README.md               overview + deploy steps
+scanner.html            Usher Scanner PWA (Epic 3) — root, so GitHub Pages serves it
+display.html            projector wall (Epic 5) — not built yet, will live at root beside scanner.html
+apps-script/
+  Code.gs               backend gateway (paste into the workbook's bound Apps Script project)
+  EmailBlaster.gs       entry-pass emails + generic blast engine
+docs/
+  api-contract.md       endpoint request/response shapes
+  db-schema.md          Master_Attendance columns A-M
+tests/
+  README.md             curl contract checks
+```
+The frontend HTML files stay at the repo root so GitHub Pages serves them without extra
+configuration. `docs/mvp-spec.md` (the original spec) is not in the repo yet — the source is the
+Google Docs handoff linked above.
 
-## Apps Script gotcha (worth remembering)
-Any top-level function named with a trailing underscore (e.g. `handleCheckin_`) is treated as
-**private by convention** and is hidden from the editor's Run-function dropdown. Entry points meant
-to be run manually from the editor (like `generateCredentials`) must NOT have a trailing underscore.
-Internal helpers keep the underscore on purpose (signals "don't call this manually").
+## Apps Script gotchas (worth remembering)
+- Any top-level function named with a trailing underscore (e.g. `handleCheckin_`) is treated as
+  **private by convention** and is hidden from the editor's Run-function dropdown. Entry points
+  meant to be run manually from the editor (like `generateCredentials`) must NOT have a trailing
+  underscore. Internal helpers keep the underscore on purpose (signals "don't call this manually").
+- **"+ New deployment" vs "Manage deployments → edit → New version":** the former mints a brand
+  new Deployment ID and `/exec` URL, leaving every existing URL (and anything pointed at it,
+  like `scanner.html`'s `CONFIG.API_BASE`) frozen on whatever code it last had. The latter keeps
+  the same URL and swaps the code behind it. To ship a `Code.gs` change to the URL `scanner.html`
+  already uses, always use the edit/new-version path. Getting this wrong caused a real incident
+  (Sept 19) — see `CHANGES.md`.
 
 ## What Claude can/cannot touch directly
 - Can read: GitHub (public clone, always), the whole workbook, all linked Docs, Drive folder.

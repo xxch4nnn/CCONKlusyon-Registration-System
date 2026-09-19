@@ -12,13 +12,16 @@ decision log (why things are the way they are).
 
 | File | What it is | Runs on |
 |---|---|---|
-| `Code.gs` | Backend gateway — check-in, offline-sync flush, recent-arrivals feed, roster cache feed, VIP Telegram alert stub | Google Apps Script (Web App) |
-| `EmailBlaster.gs` | Entry-pass email sender, plus a generic reusable blast engine for any other event email | Google Apps Script |
+| `apps-script/Code.gs` | Backend gateway — check-in, offline-sync flush, recent-arrivals feed, roster cache feed, VIP Telegram alert stub | Google Apps Script (Web App) |
+| `apps-script/EmailBlaster.gs` | Entry-pass email sender, plus a generic reusable blast engine for any other event email | Google Apps Script |
 | `scanner.html` | Usher-facing door scanner — camera QR scan, manual code fallback, offline queue, audio/visual feedback | Static, served via GitHub Pages |
+| `docs/api-contract.md` | `checkin` / `sync` / `recent` / `roster` request and response shapes | — |
+| `docs/db-schema.md` | The 13-column `Master_Attendance` schema | — |
+| `tests/README.md` | curl contract checks against the deployed `/exec` URL | — |
 
 ## Deploying a change
 
-**Backend (`Code.gs` / `EmailBlaster.gs`):** open the `Master_Attendance` tab's bound Apps
+**Backend (`apps-script/Code.gs` / `apps-script/EmailBlaster.gs`):** open the `Master_Attendance` tab's bound Apps
 Script project → paste the updated file in → **Deploy → Manage deployments → Edit → New
 version → Deploy**. `scanner.html`'s `CONFIG.API_BASE` must match that deployment's `/exec` URL.
 

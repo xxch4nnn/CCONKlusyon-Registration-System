@@ -5,6 +5,40 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-19 — Repo restructured: `apps-script/`, `docs/`, `tests/`
+**By:** user (target layout) + Claude
+**What:** moved `Code.gs` and `EmailBlaster.gs` into `apps-script/`; added `docs/api-contract.md`
+(derived from `Code.gs`, includes the `roster` endpoint), `docs/db-schema.md` (the real 13-column
+A-M schema, not the spec's A-L), and `tests/README.md` (curl contract checks). `scanner.html`
+stays at the repo root so GitHub Pages serves it unchanged; `display.html` will sit beside it in
+Epic 5. `README.md` and the "Repo structure" section of `AGENTS.md` updated to match. This
+supersedes the earlier "leave it flat for now" decision.
+**Not done:** `docs/mvp-spec.md` — the spec lives in the Google Docs handoff and wasn't available
+to extract from, so it was not written from memory. `display.html` — Epic 5, not built.
+**Impact:** no code changes. Apps Script is unaffected (files are pasted into the editor by name,
+not by repo path); the restructure itself doesn't change the live `/exec` URL or `scanner.html`.
+
+## 2026-09-19 — Root cause of roster/offline issues: deployment URL drift, not a code bug
+**By:** user (redeploy attempt) + Claude
+**What:** user redeployed `Code.gs` per the previous entry's instructions but the roster badge
+still said "server doesn't support it yet," and the offline banner stayed up persistently even
+on wifi. Root cause: the redeploy used **"+ New deployment"** rather than **"Manage deployments
+→ pencil/edit → New version → Deploy."** The former creates an entirely new Deployment ID and
+`/exec` URL; the latter updates the code behind the *existing* URL. Two new deployments (Version
+3, Version 4) were created, each with its own new URL — meanwhile `scanner.html` was still
+pointed at the *original* Epic 1 deployment URL, which never received the roster endpoint.
+Explains both symptoms: roster fetch hit stale code (no `roster` action), and the offline queue
+kept failing to sync against a URL whose behavior no longer matched what was being tested.
+**Fix:** updated `CONFIG.API_BASE` in `scanner.html` to the newest (Version 4) deployment URL,
+with an inline comment explaining the "New deployment" vs "New version" distinction so this
+doesn't recur. Also added two manual buttons to the scanner header — "🔄 Refresh roster" and
+"⏫ Sync now" — so caching/syncing state can be forced and verified immediately instead of
+waiting on the 15s/5min background timers or guessing whether something "is working."
+**Lesson for future redeploys:** always use the pencil/edit icon on the existing deployment in
+"Manage deployments," never "+ New deployment," unless the intent is genuinely to mint a new URL
+(in which case `scanner.html`'s `CONFIG.API_BASE` must be updated to match, every time).
+**Not yet retested:** roster caching and offline-mode-clearing behavior against the corrected URL.
+
 ## 2026-09-19 — Scan buffer fix, continuous-scan checkbox, roster-fetch diagnosability
 **By:** user (device testing) + Claude
 **What:** two more rounds of feedback after the offline-VIP-ID fix:

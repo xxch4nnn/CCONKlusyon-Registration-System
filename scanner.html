@@ -44,6 +44,11 @@
     font-size: 12px; color: var(--muted);
   }
   header b { color: var(--text); }
+  header button.linklike {
+    background: none; border: 1px solid #374151; color: var(--text); font-size: 11px;
+    font-weight: 600; padding: 4px 8px; border-radius: 6px; width: auto; flex: 0 0 auto;
+  }
+  header button.linklike:disabled { opacity: 0.5; }
   #offlineBanner {
     background: var(--amber); color: #1A1200; font-weight: 700; text-align: center;
     padding: 8px 10px; font-size: 14px; letter-spacing: 0.3px;
@@ -136,6 +141,8 @@
     <span>Station: <b id="stationLabel">—</b></span>
     <span id="rosterBadge">Roster: not cached yet</span>
     <span id="queueBadge">Queue: 0</span>
+    <button id="refreshRosterBtn" class="linklike">🔄 Refresh roster</button>
+    <button id="syncNowBtn" class="linklike">⏫ Sync now</button>
   </header>
 
   <div id="flash"></div>
@@ -168,7 +175,14 @@
   // ---- CONFIG -----------------------------------------------------------------------
   const CONFIG = {
     // Live Code.gs /exec URL (Epic 1, contract-tested). Update if the deployment changes.
-    API_BASE: 'https://script.google.com/macros/s/AKfycbwspVxuQu0vJcih48ggE_npLpUBPZE1Y4QucTxl5-Qgmn2M9JcZWVbJ-yKmmzOhAAkq/exec',
+    // Updated Sept 19, 5:08 PM to the Version 4 deployment (the newest one made with "+ New
+    // deployment" during the roster-endpoint redeploy). IMPORTANT: from now on, use
+    // "Manage deployments" -> pencil/edit icon on THIS deployment -> Version: New version ->
+    // Deploy to ship code changes — that keeps this same URL live. "+ New deployment" makes an
+    // entirely different URL, which is exactly what caused the roster/offline-sync mismatch
+    // this fixes (scanner.html was still pointed at the original Epic-1 URL while Code.gs kept
+    // getting redeployed to new ones).
+    API_BASE: 'https://script.google.com/macros/s/AKfycbyUZywdnh62McTK-FJwHlu5ltnrzWI6dnc1v1HMxNwG2PPM1vJO-xsXCz5T-rNrVPVi/exec',
     SCAN_FREEZE_MS: 2000,       // Story 3.1.3
     AUTO_SYNC_INTERVAL_MS: 15000,
     ROSTER_REFRESH_INTERVAL_MS: 5 * 60 * 1000, // 5 min — roster changes rarely mid-event
@@ -564,6 +578,21 @@
   updateRosterBadge();
   trySyncOfflineQueue();
   fetchRoster();
+
+  // Manual override buttons — don't make anyone wait on the 15s/5min auto timers, or guess
+  // whether caching/syncing "is working"; both give instant on-screen feedback either way.
+  document.getElementById('refreshRosterBtn').addEventListener('click', async function () {
+    const btn = this;
+    btn.disabled = true; btn.textContent = '🔄 Refreshing…';
+    await fetchRoster();
+    btn.disabled = false; btn.textContent = '🔄 Refresh roster';
+  });
+  document.getElementById('syncNowBtn').addEventListener('click', async function () {
+    const btn = this;
+    btn.disabled = true; btn.textContent = '⏫ Syncing…';
+    await trySyncOfflineQueue();
+    btn.disabled = false; btn.textContent = '⏫ Sync now';
+  });
 })();
 </script>
 </body>
