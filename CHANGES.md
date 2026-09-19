@@ -5,6 +5,35 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-19 — Scan buffer fix, continuous-scan checkbox, roster-fetch diagnosability
+**By:** user (device testing) + Claude
+**What:** two more rounds of feedback after the offline-VIP-ID fix:
+1. **Repeat-scan buffer.** The camera keeps decoding in the background while the result card
+   is on screen, and the same QR is usually still in frame — the old 2.0s debounce alone let a
+   second check-in fire the moment it lapsed, even before the usher had read the first card.
+   Fixed the default: scanning now pauses entirely while a result card is open, resuming only
+   once it's dismissed ("Next scan"). Added a "Keep scanning while a result card is showing"
+   checkbox (default off) for ushers who prefer to just keep waving codes through a fast line
+   without tapping to dismiss each time — checked, it reverts to the old 2.0s-buffer-only
+   behavior.
+2. **Offline VIP ID still not working after the roster-cache fix.** User tested camera scan
+   mid-airplane-mode and still got "code not in cache." Root cause is almost certainly a
+   deployment-order issue, not a logic bug: the roster cache can only populate from a live
+   fetch of `GET ?action=roster` *while online, before* going offline — and that endpoint only
+   exists in the `Code.gs` handed off this session, which needs a fresh **Deploy > Manage
+   deployments > Edit > New version > Deploy** in Apps Script to actually take effect on the
+   live `/exec` URL (same gotcha as the "Who has access" and Run-dropdown issues earlier this
+   project — editing Code.gs alone never republishes). If that step was skipped, `?action=roster`
+   still 404s/errors against the old deployed code, the cache never populates, and every offline
+   scan falls back to the generic message — indistinguishable from a real bug without visibility
+   into what happened. Fixed the visibility gap: `fetchRoster()` now sets the header badge to
+   "Roster: server doesn't support it yet (redeploy Code.gs)" on a non-SUCCESS response, instead
+   of failing silently. **Action needed:** redeploy `Code.gs` (new version), reload `scanner.html`
+   on the phone while online, confirm the header shows "Roster: N cached," *then* retest
+   airplane mode.
+**Impact:** UI/logic-only in `scanner.html`; `Code.gs` unchanged from the last handoff (still
+needs that redeploy for the roster endpoint to go live).
+
 ## 2026-09-19 — Git push access, README, scanner UI/UX and offline-VIP fixes
 **By:** user (device testing + feedback) + Claude
 **What:** first round of real-device feedback on `scanner.html`, plus repo access follow-up:

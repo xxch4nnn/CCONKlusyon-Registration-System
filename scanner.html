@@ -74,6 +74,11 @@
   }
   #manualSubmit { background: var(--blue); flex: 0 0 auto; }
   #queueNote { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; }
+  #continuousLabel {
+    display: flex; align-items: center; gap: 8px; width: 100%; max-width: 480px; margin-top: 12px;
+    font-size: 13px; color: var(--muted); padding: 10px 12px; background: var(--panel); border-radius: 10px;
+  }
+  #continuousLabel input { width: 18px; height: 18px; flex: 0 0 auto; }
   #readerPaused {
     width: 100%; max-width: 480px; margin: 12px auto 0; border-radius: 12px; padding: 40px 20px;
     background: var(--panel); border: 1px dashed #374151; text-align: center; color: var(--muted); font-size: 14px;
@@ -147,6 +152,10 @@
       <input id="manualCode" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="5-digit code">
       <button id="manualSubmit">Validate</button>
     </div>
+    <label id="continuousLabel">
+      <input type="checkbox" id="continuousScanCheckbox">
+      Keep scanning while a result card is showing (skip the buffer)
+    </label>
     <div id="queueNote" hidden></div>
   </main>
 
@@ -260,6 +269,12 @@
         });
         localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify({ byCode: byCode, syncedAt: new Date().toISOString() }));
         updateRosterBadge();
+      } else {
+        // The deployed Apps Script doesn't recognize ?action=roster yet — most likely Code.gs
+        // was updated but not redeployed (Deploy > Manage deployments > Edit > New version).
+        // Surfaced in the badge instead of failing silently, so this is diagnosable from the
+        // phone alone instead of looking like "offline mode is just broken."
+        document.getElementById('rosterBadge').textContent = 'Roster: server doesn’t support it yet (redeploy Code.gs)';
       }
     } catch (err) {
       // offline or endpoint unreachable — keep whatever cache is already there
@@ -313,6 +328,13 @@
   }
 
   // ---- Result modal (tier-colored, Story 3.3.2) ---------------------------------------
+  let continuousScan = false;
+  const continuousScanCheckbox = document.getElementById('continuousScanCheckbox');
+  continuousScanCheckbox.addEventListener('change', function () {
+    continuousScan = continuousScanCheckbox.checked;
+  });
+
+  function isModalOpen() { return !document.getElementById('resultModal').hidden; }
   function closeModal() { document.getElementById('resultModal').hidden = true; }
 
   function showResultModal(status, data, message) {
@@ -461,6 +483,13 @@
 
   function onScanSuccess(decodedText) {
     if (scanLocked) return; // 2.0s scan-freeze debounce (Story 3.1.3)
+    // Buffer fix: the camera keeps decoding in the background while the result card is on
+    // screen, and the same QR is usually still sitting in frame — without this guard it would
+    // re-trigger a second check-in the moment the 2s debounce lapsed, even before the usher had
+    // read the first result. Default: don't scan again until that card is dismissed. The
+    // "keep scanning" checkbox opts back into the old always-on behavior (2s buffer only) for
+    // ushers who prefer to just keep waving codes through a fast line.
+    if (isModalOpen() && !continuousScan) return;
     scanLocked = true;
     ensureAudioCtx();
     submitCheckin(decodedText.trim());
