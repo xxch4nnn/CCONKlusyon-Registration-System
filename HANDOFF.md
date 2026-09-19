@@ -48,6 +48,10 @@ is only the top-level status snapshot.
 
 ## Open items
 
+- **"Unknown action." on the first scan — mitigated, root cause unproven.** Hardening + a Connection log
+  shipped (see the Sept 19 `CHANGES.md` entry). Needs: redeploy `Code.gs`, then the 10-scan trial in
+  `tests/README.md`. If the log confirms a POST→GET downgrade, flip check-in to GET-primary.
+
 - Still untested on Epic 3: bogus/invalid code via the camera (only tested via manual entry so far),
   noisy-room audibility (Story 3.2.3), and the iOS Safari + Android Chrome pass (Story 3.5).
 - `qrbox` was removed from the scanner (whole frame is decoded). If scanning feels slower or less

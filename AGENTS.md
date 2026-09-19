@@ -60,6 +60,8 @@ Full request/response shapes: [`docs/api-contract.md`](./docs/api-contract.md). 
 - `POST /api/checkin` — `{action:"checkin", attendance_code, device_id}` → `SUCCESS` \| `DUPLICATE` \| `NOT_FOUND`
 - `POST /api/sync` — `{action:"sync", items:[...]}` — bulk offline-queue flush
 - `GET /api/recent?limit=N` — `{action:"recent"}` — feeds the projector wall
+- `GET ?action=checkin&attendance_code=&device_id=` — same as the POST check-in; the scanner's automatic retry
+  when a POST comes back unusable. `GET ?action=ping` — no-op warm-up (see `docs/api-contract.md`)
 - `GET /api/roster` — `{action:"roster"}` — full attendee list (no `email`), cached client-side by
   `scanner.html` for offline VIP identification (added post-Epic-3, see `CHANGES.md`)
 
@@ -71,7 +73,9 @@ Full request/response shapes: [`docs/api-contract.md`](./docs/api-contract.md). 
   reconnect; the roster cache (`localStorage.cco_roster_cache`) lets a scan still show tier/name
   offline. Feedback = loud Web Audio tones + Vibration API haptics (Android only; iOS has no web
   vibration) + screen flash; per-device settings in `localStorage.cco_scanner_settings`. Camera can be
-  toggled off (battery saving) without losing manual-entry function. No manifest/service worker (not
+  toggled off (battery saving) without losing manual-entry function. All server calls go through
+  `callApi()` (timeout + classification + **Settings → Connection log** for diagnosing a misbehaving
+  request from the phone); a check-in with no definitive reply is retried once via GET, then queued. No manifest/service worker (not
   in the Epic 3 story list — app-level offline queue only, not full installability).
 - `display.html` — Projector Live Wall (Epic 5). Single file, no dependencies. Polls
   `GET ?action=recent` every 4000 ms (first load pulls up to 300 so a mid-event start shows everyone,

@@ -13,6 +13,8 @@
   GitHub Pages. Wires to the live Code.gs API contract:
     POST {action:"checkin", attendance_code, device_id} -> SUCCESS | DUPLICATE | NOT_FOUND
     POST {action:"sync", items:[...]}                    -> bulk offline-queue flush
+    GET  ?action=checkin&attendance_code=&device_id=     -> same as POST checkin (automatic retry path)
+    GET  ?action=ping                                    -> warm-up / round-trip check
     GET  ?action=roster                                  -> full attendee list, cached client-side
                                                              for offline VIP identification
   html5-qrcode loaded from jsdelivr per Story 3.1.1 (spec explicitly calls for "via CDN").
@@ -217,6 +219,8 @@
   .sheet-actions .btn { padding: 12px 8px; font-size: 13px; background: var(--panel-2); }
   .sheet-actions .wide { grid-column: 1 / -1; }
   .tiny { color: var(--muted); font-size: 11px; margin-top: 10px; word-break: break-all; }
+  #diagLog { max-height: 34dvh; overflow: auto; margin: 8px 0; padding: 8px; border-radius: 8px; background: var(--bg);
+    color: #C7CEDA; font: 10.5px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
 </style>
 </head>
 <body>
@@ -292,6 +296,16 @@
       <button class="btn" id="refreshRosterBtn">🔄 Refresh roster</button>
       <button class="btn" id="syncNowBtn">⏫ Sync now</button>
       <button class="btn wide" id="changeStationBtn">✏️ Change station name</button>
+      <button class="btn wide" id="diagToggleBtn">🩺 Connection log</button>
+    </div>
+    <div id="diagPanel" hidden>
+      <pre id="diagLog"></pre>
+      <div class="sheet-actions">
+        <button class="btn" id="diagCopyBtn">📋 Copy</button>
+        <button class="btn" id="diagClearBtn">🗑 Clear</button>
+      </div>
+    </div>
+    <div class="sheet-actions" style="margin-top:8px">
       <button class="btn wide" id="closeSettingsBtn" style="background:var(--blue)">Done</button>
     </div>
     <div class="tiny" id="apiNote"></div>
@@ -325,7 +339,11 @@
     DEVICE_ID_KEY: 'cco_device_id',
     OFFLINE_QUEUE_KEY: 'cco_offline_scans',
     ROSTER_CACHE_KEY: 'cco_roster_cache',
-    SETTINGS_KEY: 'cco_scanner_settings'
+    SETTINGS_KEY: 'cco_scanner_settings',
+    DIAG_KEY: 'cco_diag',
+    DIAG_MAX: 40,                // entries kept in the connection log
+    REQUEST_TIMEOUT_MS: 12000,   // Apps Script is normally 1-2 s, occasionally 4+; 12 s = clearly stuck
+    SYNC_FALLBACK_MAX: 25        // per-item GET fallback cap per sync run
   };
 
   const $ = function (id) { return document.getElementById(id); };
@@ -367,6 +385,90 @@
   let deviceId = getDeviceId();
   $('stationLabel').textContent = deviceId;
 
+  // ---- API layer: the one place that talks to Apps Script -------------------------------------
+  // Every call gets a timeout and a line in the connection log (Settings -> Connection log), so a
+  // misbehaving request can be diagnosed from the phone. The result is classified as:
+  //   json    - a parsed JSON object came back (inspect .json.status)
+  //   bad     - a response arrived but wasn't JSON (Google HTML error/login page, etc.)
+  //   timeout - no response within CONFIG.REQUEST_TIMEOUT_MS
+  //   network - fetch itself failed (offline, DNS, blocked)
+  // Earlier versions lumped all of these together as "offline", which hid real server-side problems.
+  const DEFINITIVE = { SUCCESS: 1, DUPLICATE: 1, NOT_FOUND: 1 };
+  function isDefinitive(r) { return r.type === 'json' && !!DEFINITIVE[r.json.status]; }
+  function sleep(ms) { return new Promise(function (res) { setTimeout(res, ms); }); }
+
+  function readDiag() {
+    try { return JSON.parse(localStorage.getItem(CONFIG.DIAG_KEY) || '[]'); } catch (e) { return []; }
+  }
+  function diagLog(entry) {
+    try {
+      const d = readDiag();
+      d.push(entry);
+      localStorage.setItem(CONFIG.DIAG_KEY, JSON.stringify(d.slice(-CONFIG.DIAG_MAX)));
+    } catch (e) { /* storage blocked/full — the log is best-effort */ }
+    renderDiag();
+  }
+  // Host + path only; the deployment id and echo keys are not needed to diagnose and are shortened.
+  function redactUrl(u) {
+    try {
+      const x = new URL(u);
+      return x.host + x.pathname.replace(/\/s\/[^/]+/, '/s/…');
+    } catch (e) { return ''; }
+  }
+  function fmtDiag(e) {
+    const t = new Date(e.t);
+    const hms = [t.getHours(), t.getMinutes(), t.getSeconds()].map(function (n) { return String(n).padStart(2, '0'); }).join(':');
+    return hms + ' ' + e.label + ' → ' + (e.outcome || '?') + (e.st ? ' [' + e.st + (e.redir ? ' redirected' : ' direct') + ']' : '') +
+      ' ' + (e.ms != null ? e.ms + 'ms' : '') + (e.url ? '\n   ' + e.url : '') + (e.note ? '\n   ' + e.note : '');
+  }
+  function renderDiag() {
+    const pre = $('diagLog');
+    if (!pre || $('diagPanel').hidden) return;
+    const d = readDiag();
+    pre.textContent = d.length ? d.slice().reverse().map(fmtDiag).join('\n') : 'No requests logged yet.';
+  }
+
+  async function callApi(label, url, init) {
+    const t0 = performance.now();
+    const ctrl = new AbortController();
+    const timer = setTimeout(function () { ctrl.abort(); }, CONFIG.REQUEST_TIMEOUT_MS);
+    const entry = { t: new Date().toISOString(), label: label };
+    try {
+      const res = await fetch(url, Object.assign({}, init, { signal: ctrl.signal }));
+      entry.st = res.status;
+      entry.redir = res.redirected;
+      entry.url = redactUrl(res.url);
+      const text = await res.text();
+      entry.ms = Math.round(performance.now() - t0);
+      let json = null;
+      try { json = JSON.parse(text); } catch (e) { /* not JSON */ }
+      if (json && typeof json === 'object') {
+        entry.outcome = json.status || 'json';
+        // Only the message of an ERROR is logged — never attendee data (names) from a success body.
+        if (json.status === 'ERROR') entry.note = json.message;
+        diagLog(entry);
+        return { type: 'json', json: json };
+      }
+      entry.outcome = 'NOT-JSON';
+      entry.note = text.replace(/\s+/g, ' ').slice(0, 90);
+      diagLog(entry);
+      return { type: 'bad' };
+    } catch (err) {
+      entry.ms = Math.round(performance.now() - t0);
+      const aborted = err && err.name === 'AbortError';
+      entry.outcome = aborted ? 'TIMEOUT' : 'NETWORK-ERROR';
+      entry.note = String(err).slice(0, 90);
+      diagLog(entry);
+      return { type: aborted ? 'timeout' : 'network' };
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  function checkinUrl(code, dev) {
+    return CONFIG.API_BASE + '?action=checkin&attendance_code=' + encodeURIComponent(code) +
+      '&device_id=' + encodeURIComponent(dev || deviceId);
+  }
+
   // ---- Offline queue (Story 3.4) ------------------------------------------------------
   function readQueue() {
     try { return JSON.parse(localStorage.getItem(CONFIG.OFFLINE_QUEUE_KEY) || '[]'); }
@@ -391,24 +493,47 @@
     $('netDot').classList.toggle('warn', offline || n > 0);
   }
 
-  // Returns the number of queued scans flushed, or null if nothing was sent.
+  // Flushes the offline queue. Returns the number of scans the server confirmed, or null if none.
+  // Only items the server gave a definitive answer for (SUCCESS / DUPLICATE / NOT_FOUND) are removed;
+  // anything it errored on stays queued for the next run. If the bulk POST can't be used (downgraded
+  // to a GET, HTML error page, timeout), it falls back to one GET check-in per item.
+  let syncing = false;
   async function trySyncOfflineQueue() {
+    if (syncing) return null;
     const q = readQueue();
     if (q.length === 0 || !navigator.onLine) return null;
+    syncing = true;
     try {
-      const res = await fetch(CONFIG.API_BASE, {
+      const r = await callApi('sync POST', CONFIG.API_BASE, {
         method: 'POST',
         body: JSON.stringify({ action: 'sync', items: q })
       });
-      const json = await res.json();
-      if (json && json.status === 'SUCCESS') {
-        writeQueue([]); // whole batch flushed — Code.gs handleSync_ processes every item
-        return q.length;
+      if (r.type === 'network') return null; // still offline — leave the queue intact
+      let keep;
+      if (r.type === 'json' && r.json.status === 'SUCCESS') {
+        const results = Array.isArray(r.json.results) ? r.json.results : null;
+        keep = results
+          ? q.filter(function (_, i) { return !(results[i] && DEFINITIVE[results[i].status]); })
+          : []; // older server without per-item results: treat the batch as processed, as before
+      } else {
+        keep = [];
+        let tried = 0;
+        for (let i = 0; i < q.length; i++) {
+          if (tried >= CONFIG.SYNC_FALLBACK_MAX) { keep.push(q[i]); continue; }
+          tried++;
+          const g = await callApi('sync item GET', checkinUrl(q[i].attendance_code, q[i].device_id));
+          if (g.type === 'network') { keep.push.apply(keep, q.slice(i)); break; }
+          if (!isDefinitive(g)) keep.push(q[i]);
+        }
       }
-    } catch (err) {
-      // still offline or endpoint unreachable — leave queue intact, retry later
+      // Scans made while this ran were appended to storage after `q` was read — never drop them.
+      const extras = readQueue().slice(q.length);
+      writeQueue(keep.concat(extras));
+      const flushed = q.length - keep.length;
+      return flushed > 0 ? flushed : null;
+    } finally {
+      syncing = false;
     }
-    return null;
   }
   window.addEventListener('online', function () { trySyncOfflineQueue(); updateQueueUi(); });
   window.addEventListener('offline', updateQueueUi);
@@ -440,18 +565,17 @@
   // Returns 'ok' | 'unsupported' | 'offline'.
   async function fetchRoster() {
     if (!navigator.onLine) return 'offline';
-    try {
-      const res = await fetch(CONFIG.API_BASE + '?action=roster');
-      const json = await res.json();
-      if (json && json.status === 'SUCCESS' && Array.isArray(json.attendees)) {
-        const byCode = {};
-        json.attendees.forEach(function (a) {
-          if (a.attendance_code) byCode[String(a.attendance_code)] = a;
-        });
-        localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify({ byCode: byCode, syncedAt: new Date().toISOString() }));
-        updateRosterBadge();
-        return 'ok';
-      }
+    const r = await callApi('roster GET', CONFIG.API_BASE + '?action=roster');
+    if (r.type === 'json' && r.json.status === 'SUCCESS' && Array.isArray(r.json.attendees)) {
+      const byCode = {};
+      r.json.attendees.forEach(function (a) {
+        if (a.attendance_code) byCode[String(a.attendance_code)] = a;
+      });
+      localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify({ byCode: byCode, syncedAt: new Date().toISOString() }));
+      updateRosterBadge();
+      return 'ok';
+    }
+    if (r.type === 'json') {
       // The deployed Apps Script doesn't recognize ?action=roster yet — most likely Code.gs
       // was updated but not redeployed (Deploy > Manage deployments > Edit > New version).
       // Surfaced in the badge instead of failing silently, so this is diagnosable from the
@@ -460,10 +584,8 @@
       el.textContent = '👥 ⚠ redeploy Code.gs';
       el.classList.add('attn');
       return 'unsupported';
-    } catch (err) {
-      // offline or endpoint unreachable — keep whatever cache is already there
-      return 'offline';
     }
+    return 'offline'; // no usable response — keep whatever cache is already there
   }
   window.addEventListener('online', fetchRoster);
   setInterval(fetchRoster, CONFIG.ROSTER_REFRESH_INTERVAL_MS);
@@ -652,12 +774,14 @@
         (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
         '<span class="offline-note">' + (suspectDup
           ? 'Per the last roster sync this code was already checked in — verify with the printed roster before letting them through again.'
-          : 'No connection — identity is from the last cached roster sync. Check-in will be recorded once back online.') + '</span>' +
+          : (data._reason === 'server'
+            ? 'The server didn’t confirm this check-in. It’s saved on this device and will sync automatically — identity is from the last cached roster sync.'
+            : 'No connection — identity is from the last cached roster sync. Check-in will be recorded once back online.')) + '</span>' +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else if (status === 'QUEUED') {
       html =
         '<div class="card"><div class="body">' +
-        '<p class="msg" style="color:var(--amber);">OFFLINE — CODE NOT IN CACHE</p>' +
+        '<p class="msg" style="color:var(--amber);">' + (message ? 'NOT CONFIRMED — CODE NOT IN CACHE' : 'OFFLINE — CODE NOT IN CACHE') + '</p>' +
         '<p class="sub">' + escapeHtml_(message || 'No connection and this code isn’t in the cached roster, so this attendee can’t be identified right now — including whether they’re VIP. Check the printed roster before letting them through.') + '</p>' +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else {
@@ -693,36 +817,80 @@
   }
 
   // ---- Core check-in call (shared by camera scan + manual PIN, Story 3.1.2 / 3.3) -----
+  // Flow: POST -> (if the reply isn't a definitive answer) one silent retry via GET -> (if still no
+  // definitive answer) save to the offline queue. The raw server text ("Unknown action." etc.) is never
+  // shown to an usher. A retry is safe: the server's duplicate check is atomic under the script lock.
   async function submitCheckin(code) {
     const payload = { action: 'checkin', attendance_code: code, device_id: deviceId };
-    let json;
-    try {
-      const res = await fetch(CONFIG.API_BASE, { method: 'POST', body: JSON.stringify(payload) });
-      json = await res.json();
-    } catch (err) {
-      // Network failure -> offline resilience (Story 3.4.1): queue and tell the usher
-      // check-in will be confirmed once the connection returns, instead of blocking entry.
-      queueOffline(payload);
-      const cached = lookupRoster(code);
-      if (cached) {
-        // Roster cache hit: identify the attendee (tier/name/table) even offline (mitigation
-        // for the "can't spot a VIP with no connection" gap).
-        const suspectDup = cached.checkin_status === 'Checked-In';
-        const vip = cached.ticket_type === 'VIP Pass';
-        flashScreen(suspectDup ? 'amber' : (vip ? 'gold' : 'green'));
-        reactReticle(suspectDup ? 'dup' : (vip ? 'vip' : 'ok'));
-        feedback(suspectDup ? 'duplicate' : (vip ? 'vip' : 'success'));
-        if (!suspectDup) countScan();
-        showResultModal('QUEUED_OFFLINE', cached, null);
-      } else {
-        flashScreen('amber');
-        reactReticle('dup');
-        feedback('duplicate'); // neutral tone — not a hard error, not a confirmed success
-        showResultModal('QUEUED', {}, null);
-      }
-      return;
+    const startedAt = Date.now();
+    let r = await callApi('checkin POST', CONFIG.API_BASE, { method: 'POST', body: JSON.stringify(payload) });
+    if (r.type === 'network') return handleUnconfirmed(code, payload, 'offline');
+
+    let ambiguous = false; // true when the first attempt might have written to the sheet before failing
+    if (!isDefinitive(r)) {
+      // "Unknown action." (POST arrived as a GET), a non-JSON error page, a timeout, or "System busy".
+      ambiguous = r.type === 'bad' || r.type === 'timeout';
+      showToast('Connection hiccup — retrying…', 1600);
+      if (r.type === 'json' && /busy/i.test(r.json.message || '')) await sleep(600);
+      r = await callApi('checkin GET retry', checkinUrl(code));
+      if (r.type === 'network') return handleUnconfirmed(code, payload, 'offline');
+      if (!isDefinitive(r)) return handleUnconfirmed(code, payload, 'server');
     }
 
+    let json = r.json;
+    // If the first attempt may have succeeded before its reply was lost, the retry sees our own write
+    // as a "duplicate". Recognise it (same device, written after this scan began) and show success.
+    if (ambiguous && json.status === 'DUPLICATE' && isOwnEarlierWrite(json.data, startedAt)) {
+      json = asRecoveredSuccess(code, json.data);
+    }
+    renderCheckinResult(json);
+  }
+
+  function isOwnEarlierWrite(data, startedAt) {
+    if (!data || data.checked_in_by !== deviceId) return false; // needs the redeployed server's checked_in_by
+    const t = Date.parse(data.initial_checkin_timestamp);
+    return !isNaN(t) && t >= startedAt - 5000; // 5 s slack for clock rounding
+  }
+  function asRecoveredSuccess(code, dup) {
+    const cached = lookupRoster(code) || {};
+    return {
+      status: 'SUCCESS',
+      message: 'Recovered after a retry.',
+      data: Object.assign({}, cached, {
+        attendance_code: code,
+        full_name: dup.full_name || cached.full_name,
+        table_allocation: dup.table_allocation || cached.table_allocation,
+        checkin_timestamp: dup.initial_checkin_timestamp
+      })
+    };
+  }
+
+  // No confirmed answer from the server: keep the scan (offline queue) and identify the attendee from
+  // the cached roster so the usher can still spot a VIP. reason: 'offline' (no connection) | 'server'.
+  function handleUnconfirmed(code, payload, reason) {
+    queueOffline(payload);
+    const cached = lookupRoster(code);
+    if (cached) {
+      // Roster cache hit: identify the attendee (tier/name/table) even offline (mitigation
+      // for the "can't spot a VIP with no connection" gap).
+      const suspectDup = cached.checkin_status === 'Checked-In';
+      const vip = cached.ticket_type === 'VIP Pass';
+      flashScreen(suspectDup ? 'amber' : (vip ? 'gold' : 'green'));
+      reactReticle(suspectDup ? 'dup' : (vip ? 'vip' : 'ok'));
+      feedback(suspectDup ? 'duplicate' : (vip ? 'vip' : 'success'));
+      if (!suspectDup) countScan();
+      showResultModal('QUEUED_OFFLINE', Object.assign({}, cached, { _reason: reason }), null);
+    } else {
+      flashScreen('amber');
+      reactReticle('dup');
+      feedback('duplicate'); // neutral tone — not a hard error, not a confirmed success
+      showResultModal('QUEUED', {}, reason === 'server'
+        ? 'The server didn’t confirm this check-in, and this code isn’t in the cached roster, so this attendee can’t be identified right now — including whether they’re VIP. The scan is saved and will sync; scan again in a moment or check the printed roster.'
+        : null);
+    }
+  }
+
+  function renderCheckinResult(json) {
     if (json.status === 'SUCCESS') {
       const vip = json.data && json.data.ticket_type === 'VIP Pass';
       flashScreen(vip ? 'gold' : 'green');
@@ -735,16 +903,11 @@
       reactReticle('dup');
       feedback('duplicate');
       showResultModal('DUPLICATE', json.data, json.message);
-    } else if (json.status === 'NOT_FOUND') {
-      flashScreen('red');
-      reactReticle('err');
-      feedback('error');
-      showResultModal('NOT_FOUND', {}, json.message);
     } else {
       flashScreen('red');
       reactReticle('err');
       feedback('error');
-      showResultModal('ERROR', {}, json.message || 'Unexpected response.');
+      showResultModal('NOT_FOUND', {}, json.message);
     }
   }
 
@@ -935,6 +1098,24 @@
     $('stationLabel').textContent = deviceId;
     showToast('Station set to ' + deviceId);
   });
+  $('diagToggleBtn').addEventListener('click', function () {
+    $('diagPanel').hidden = !$('diagPanel').hidden;
+    renderDiag();
+  });
+  $('diagClearBtn').addEventListener('click', function () {
+    try { localStorage.removeItem(CONFIG.DIAG_KEY); } catch (e) { /* ignore */ }
+    renderDiag();
+  });
+  $('diagCopyBtn').addEventListener('click', async function () {
+    const text = readDiag().map(fmtDiag).join('\n');
+    try { await navigator.clipboard.writeText(text); showToast('Log copied'); }
+    catch (e) {
+      // Clipboard API can be blocked on http/older browsers — fall back to selecting the text.
+      const range = document.createRange(); range.selectNodeContents($('diagLog'));
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      showToast('Select & copy the highlighted log');
+    }
+  });
   $('apiNote').textContent = 'API …' + CONFIG.API_BASE.slice(-18);
 
   // ---- Init -----------------------------------------------------------------------------
@@ -942,6 +1123,7 @@
   cameraToggleBtn.textContent = '📷 Starting…';
   updateQueueUi();
   updateRosterBadge();
+  callApi('ping GET', CONFIG.API_BASE + '?action=ping'); // warms the container; harmless on a server without ping
   trySyncOfflineQueue();
   fetchRoster();
   startCamera();

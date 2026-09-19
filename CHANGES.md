@@ -5,6 +5,46 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-19 — "Unknown action." on the first check-in: audit, hardening, diagnostics
+**By:** user (report) + Claude
+**Symptom:** the first check-in scan often showed an error card reading "Unknown action…".
+**Audit:**
+- That text exists only in `Code.gs` (`doPost` when `body.action` isn't `checkin`/`sync`; `doGet` when
+  there's no/unknown `?action=`). The scanner always sends a valid action, so the request that failed was
+  almost certainly a POST that reached the script **as a GET with no parameters** (or without its body).
+- Read-only probes of the live endpoint: an anonymous POST *does* reach `doPost` (bogus action →
+  "Unknown action." via one 302 to `/macros/echo`), and a GET with no action returns the same text.
+  Latency was 1.3–4.4 s, so this is not a cold-start failure. **So the fault depends on the phone's
+  session/network path and could not be reproduced from here — root cause is NOT yet proven.** Leading
+  hypothesis: a redirect that downgrades the POST to a GET for browsers carrying Google session state.
+- Client weakness found: `submitCheckin` treated *any* failure (including a non-JSON HTML error page) as
+  "offline", with no retry and no record of what the phone received. Also found: a scan queued while a sync
+  was in flight was silently dropped when the queue was cleared.
+**Changes (defense in depth — works whichever cause it turns out to be):**
+- `Code.gs`: every request logs one line (visible in the editor's **Executions**); `doGet` accepts
+  `?action=checkin&attendance_code=&device_id=` (safe to repeat: the duplicate check is atomic under the
+  lock); `doPost` falls back to `?action=` / query fields when the body lacks them; new `ping` action;
+  `DUPLICATE` now includes `checked_in_by`.
+- `scanner.html`: all API calls go through `callApi()` (12 s timeout + classification: json / non-JSON /
+  timeout / network). A check-in that doesn't get a definitive answer (`SUCCESS`/`DUPLICATE`/`NOT_FOUND`)
+  is **silently retried once via GET**; if that also fails the scan is saved to the offline queue with a
+  clear message — the raw server text is never shown. If a first attempt may have written before its reply
+  was lost, the retry's "duplicate" is recognised as our own write (same device, written after the scan
+  began) and shown as success. Sync falls back to per-item GET, keeps only items the server didn't confirm,
+  and no longer drops scans made mid-sync. `ping` on load warms the container.
+- **Diagnostics:** Settings → **Connection log** records the last 40 requests (method, status, whether it was
+  redirected, final host/path, ms, outcome, error text; no attendee data, keys shortened) with Copy/Clear.
+**Verification:** 17/17 mocked-Apps-Script checks (GET check-in, idempotent repeat, query-string fallback,
+ping, unchanged routes) and 16/16 headless-browser scenarios against a scripted fake server (downgraded POST,
+HTML reply, timeout, lost reply, busy lock, real duplicate, other-device duplicate, network failure, sync
+fallback, sync race). Not verified on a phone.
+**To close this out (user-side):** redeploy `Code.gs` (**Manage deployments → edit → New version**), then
+do ~10 first-scans after idle on the affected phone. Read Settings → Connection log: a
+`checkin POST → ERROR "Unknown action."` followed by `checkin GET retry → SUCCESS` proves the POST was being
+downgraded, and the Executions dashboard will show a `doGet action=undefined` at that moment. If that's
+confirmed, flip check-in to GET-primary (planned follow-up). If the log shows `NOT-JSON` or `TIMEOUT`
+instead, that's the cause to chase.
+
 ## 2026-09-19 — Scanner UI overhaul + louder audio/haptics; Epic 4 wired; Epic 5 built
 **By:** user (device feedback: offline mode confirmed working; layout overflow, weak audio) + Claude
 **Scanner (`scanner.html`):**

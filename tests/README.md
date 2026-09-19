@@ -41,3 +41,15 @@ queue) are tracked in `CHANGES.md`.
 
 Open `display.html` (GitHub Pages URL), press F11. Check in a few rows from the scanner; each should
 appear within one poll (≤ 4 s). Drop the network: the wall keeps its data and shows "Reconnecting…".
+
+## First-scan / "Unknown action." check
+
+After redeploying `Code.gs`, on the phone that showed the error: reload the scanner, wait a few minutes idle,
+then scan/enter a test code; repeat ~10 times (reset rows afterwards). Then:
+
+1. **Settings → Connection log** — look for `checkin POST → ERROR` (note text) followed by
+   `checkin GET retry → SUCCESS`. `[200 direct]` vs `[200 redirected]`, and `NOT-JSON` / `TIMEOUT` rows, are
+   the clues. Use **Copy** to send the log for analysis.
+2. Apps Script editor → **Executions**: a failing scan that ran `doGet` with `action=undefined` (or a `doPost`
+   with `bodyLen=0`) confirms the request was downgraded.
+3. The usher should never see the words "Unknown action" — only a result card or the "saved, will sync" card.

@@ -79,27 +79,64 @@ function generateCredentials() {
   }
 }
 
+/**
+ * Router. Every request is logged in one line (visible under Executions in the Apps Script editor)
+ * so a misrouted request — e.g. a POST that arrived as a GET with no params, which is what produces
+ * "Unknown action." — can be seen after the fact.
+ */
 function doPost(e) {
-  let body;
+  const params = (e && e.parameter) || {};
+  const raw = e && e.postData && e.postData.contents;
+  let body = {};
+  let parseFailed = false;
   try {
-    body = JSON.parse(e.postData.contents);
+    body = JSON.parse(raw);
   } catch (err) {
-    return jsonOut_({ status: 'ERROR', message: 'Invalid JSON payload.' });
+    parseFailed = true;
   }
+  if (!body || typeof body !== 'object') body = {};
 
-  if (body.action === 'checkin') return handleCheckin_(body);
-  if (body.action === 'sync') return handleSync_(body);
+  // Tolerate the action (and a check-in's fields) arriving in the query string instead of the body.
+  const action = body.action || params.action;
+  console.log('doPost action=' + action + ' bodyLen=' + (raw ? raw.length : 0) + ' params=' + Object.keys(params).join(','));
+
+  if (parseFailed && !action) return jsonOut_({ status: 'ERROR', message: 'Invalid JSON payload.' });
+
+  if (action === 'checkin') return handleCheckin_(mergeCheckinParams_(body, params));
+  if (action === 'sync') return handleSync_(body);
+  if (action === 'ping') return handlePing_();
   return jsonOut_({ status: 'ERROR', message: 'Unknown action.' });
 }
 
 function doGet(e) {
-  const action = e.parameter.action;
+  const params = (e && e.parameter) || {};
+  const action = params.action;
+  console.log('doGet action=' + action + ' params=' + Object.keys(params).join(','));
+
   if (action === 'recent') {
-    const limit = parseInt(e.parameter.limit, 10) || 12;
+    const limit = parseInt(params.limit, 10) || 12;
     return handleRecent_(limit);
   }
   if (action === 'roster') return handleRoster_();
+  // GET check-in: the scanner's fallback when a POST is downgraded/redirected and the body is lost.
+  // Safe to repeat — the duplicate check under the script lock makes a second call a no-op.
+  if (action === 'checkin') return handleCheckin_(mergeCheckinParams_({}, params));
+  if (action === 'ping') return handlePing_();
   return jsonOut_({ status: 'ERROR', message: 'Unknown action.' });
+}
+
+/** Fill a check-in body's blanks from query-string params. */
+function mergeCheckinParams_(body, params) {
+  return {
+    action: 'checkin',
+    attendance_code: body.attendance_code || params.attendance_code,
+    device_id: body.device_id || params.device_id
+  };
+}
+
+/** Cheap no-op: lets the scanner warm the container and test the round trip without touching the sheet. */
+function handlePing_() {
+  return jsonOut_({ status: 'SUCCESS', message: 'pong', ts: new Date().toISOString() });
 }
 
 /** Endpoint 1: check-in. */
@@ -151,7 +188,8 @@ function processCheckin_(code, deviceId) {
         data: {
           full_name: row[COL.FULL_NAME - 1],
           initial_checkin_timestamp: row[COL.CHECKIN_TS - 1],
-          table_allocation: row[COL.TABLE_ALLOC - 1]
+          table_allocation: row[COL.TABLE_ALLOC - 1],
+          checked_in_by: row[COL.CHECKED_IN_BY - 1]
         }
       };
     }
