@@ -123,7 +123,11 @@ untested — including the new full-screen camera layout, the vibration fallback
 - **Likely causes:** "+ New deployment" (a *different* URL that the scanner/wall don't use), or the pasted file wasn't saved, or the wrong project was edited.
 - **Impact:** GET retry, lost-reply recovery, the alert timing log, `auditRoster`, `resetTestCheckins`, `checked_in_by`, and the spec-correct alert text are all undeployed —
   and BUG-005 ("Unknown action." / unconfirmed cards) cannot improve until this is fixed.
-- **Check:** open `<exec URL>?action=ping` — it must return `pong` (steps in `docs/audit-2026-09-20.md`). **Status:** **Open — needs you.**
+- **Root cause (confirmed 00:44):** the editor holds the new code (`testVipAlertTemplate` logged the new wording), but Manage deployments still showed **Version 4 · Sep 19 5:08 PM** — the
+  deployment was re-deployed without choosing **New version**, so the web app kept running Version 4.
+- **Fix (code):** `ping` now reports `version`; the scanner shows a **red dot on ⚙️ and a warning in Settings** when the deployed script is outdated, and the backend version when current.
+  Tests B1–B5 (baseline 6 failing → all pass). **Fix (action):** Manage deployments → ✏️ → Version: **New version** → Deploy → the dialog must show Version 5+ dated today.
+  **Status:** **Open — needs you** (the detector is built; the redeploy is yours).
 
 ### BUG-013 — VIP alert said "Table: 0"; unassigned seats shown as "Table/Seat: 0"
 - **Found:** your Telegram screenshot + a sheet audit: `table_allocation` is `0` on all 10 rows (the sheet's placeholder for "not assigned").

@@ -32,6 +32,7 @@ ok('POST invalid JSON, no action => Invalid JSON', post('not json').message==='I
 ok('POST invalid JSON but ?action=ping => pong', post('not json',{action:'ping'}).message==='pong');
 ok('POST bogus action => Unknown action', post({action:'zzz'}).message==='Unknown action.');
 ok('GET ping => pong', get({action:'ping'}).message==='pong');
+ok('ping reports the backend version (deployment check)', /^\d{4}-\d{2}-\d{2}\.\d+$/.test(String(get({action:'ping'}).version)), JSON.stringify(get({action:'ping'})));
 ok('GET no params => Unknown action (unchanged)', get({}).message==='Unknown action.');
 ok('GET roster still works', get({action:'roster'}).status==='SUCCESS');
 ok('GET recent still works', get({action:'recent',limit:'5'}).status==='SUCCESS');

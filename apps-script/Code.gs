@@ -37,6 +37,10 @@
  *   5. Copy the /exec URL back to me to contract-test, or curl it yourself.
  */
 
+// Bump on every change you deploy. `ping` reports it, and the scanner shows a warning if the deployed script is older
+// (editing this file in the Apps Script editor changes nothing for the phones until the DEPLOYMENT is moved to a new version).
+const BACKEND_VERSION = '2026-09-20.1';
+
 const SHEET_NAME = 'Master_Attendance';
 const COL = {
   EMAIL: 1, FULL_NAME: 2, ORG_CLASS: 3, CLUB_NAME: 4, DESIGNATION: 5,
@@ -136,7 +140,7 @@ function mergeCheckinParams_(body, params) {
 
 /** Cheap no-op: lets the scanner warm the container and test the round trip without touching the sheet. */
 function handlePing_() {
-  return jsonOut_({ status: 'SUCCESS', message: 'pong', ts: new Date().toISOString() });
+  return jsonOut_({ status: 'SUCCESS', message: 'pong', version: BACKEND_VERSION, ts: new Date().toISOString() });
 }
 
 /** Endpoint 1: check-in. */

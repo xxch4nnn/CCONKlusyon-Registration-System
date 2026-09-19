@@ -5,6 +5,16 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-20 — Stale deployment diagnosed (Version 4); backend version check added
+**By:** user (Manage-deployments screen + Executions log) + Claude
+**Diagnosis:** the Executions log (`Sent in 474 ms (1 attempt(s))`) proves the editor holds the new code, but the deployment dialog still read **Version 4 · Sep 19, 5:08 PM** and the live
+URL still answers `?action=ping` with "Unknown action." — the deployment was re-deployed **without choosing "New version"**, so the web app never moved. Also measured: Telegram round trip
+**474 ms** (1 attempt) for a test alert.
+**Change (test-first — 6 checks failed before):** `Code.gs` `BACKEND_VERSION = '2026-09-20.1'`, returned by `ping`; the scanner's `checkBackend()` shows a red dot on ⚙️ + a Settings warning when
+a reachable server doesn't know `ping` (outdated), the version when current, and stays quiet when merely offline. Suite: Apps Script 64, scanner 134, fresh-install 42, wall 18.
+**Parked/blocked:** device retests (user: not a QA gate), real roster + VIP photos (council still collecting). Epic 4: 4.1.3 and 4.1.4 still wait on a real redeploy.
+**Bump `BACKEND_VERSION` whenever `Code.gs` changes**, so the scanner can tell you which version the phones are on.
+
 ## 2026-09-20 — Sprint-backlog audit; Epic 4 hardening (retry, timing log, seat 0, delayed-scan marker)
 **By:** user (Telegram works; says Code.gs redeployed; nothing device-tested yet) + Claude
 **Audit ([`docs/audit-2026-09-20.md`](../docs/audit-2026-09-20.md)):** read-only probes show the **new `Code.gs` is not live** (`?action=ping` → Unknown action), so the alerts in the

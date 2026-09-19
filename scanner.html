@@ -238,6 +238,9 @@
   #stationInput:focus { outline: 2px solid var(--blue); border-color: transparent; }
   .gate-err { margin: 10px 0 0; font-size: 12px; color: #FCA5A5; }
   .gate-card .btn { width: 100%; margin-top: 14px; }
+  #menuBtn { position: relative; }
+  #menuBtn.attn::after { content: ''; position: absolute; top: 3px; right: 3px; width: 10px; height: 10px; border-radius: 50%; background: var(--red); border: 2px solid var(--panel); }
+  .warn-box { background: #7F1D1D; color: #FECACA; border-radius: 10px; padding: 10px 12px; font-size: 12px; line-height: 1.45; margin: 0 0 10px; }
   .tiny { color: var(--muted); font-size: 11px; margin-top: 10px; word-break: break-all; }
   #diagLog { max-height: 34dvh; overflow: auto; margin: 8px 0; padding: 8px; border-radius: 8px; background: var(--bg);
     color: #C7CEDA; font: 10.5px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
@@ -307,6 +310,7 @@
 <div id="settingsSheet" role="dialog" aria-label="Scanner settings" hidden>
   <div class="grab"></div>
   <p class="sheet-title">Scanner settings</p>
+  <div id="backendWarn" class="warn-box" role="alert" hidden>⚠ The server script (Code.gs) is <b>out of date</b> — the check-in retry and the corrected VIP alert are not active. Fix: Apps Script → Deploy → Manage deployments → ✏️ → Version: <b>New version</b> → Deploy.</div>
   <div class="setting">
     <div class="label">Sound</div>
     <div class="seg" id="volumeSeg">
@@ -552,6 +556,27 @@
     return CONFIG.API_BASE + '?action=checkin&attendance_code=' + encodeURIComponent(code) +
       '&device_id=' + encodeURIComponent(dev || deviceId);
   }
+
+  // ---- Backend version check ---------------------------------------------------------------------------
+  // Editing Code.gs in the Apps Script editor changes NOTHING the phones use until the *deployment* is moved to a new
+  // version. `ping` reports the running version, so a stale deployment is visible here (red dot on the gear + a warning in
+  // Settings) instead of surfacing as mysterious "Unknown action." errors. Being offline says nothing about the
+  // deployment, so only a *reachable* server that doesn't know `ping` counts as outdated.
+  let backendState = 'unknown', backendVersion = null; // 'unknown' | 'ok' | 'outdated'
+  function renderBackend() {
+    $('menuBtn').classList.toggle('attn', backendState === 'outdated');
+    $('backendWarn').hidden = backendState !== 'outdated';
+    $('apiNote').textContent = 'API …' + CONFIG.API_BASE.slice(-18) + ' · ' +
+      (backendState === 'ok' ? 'backend ' + backendVersion : backendState === 'outdated' ? 'backend OUTDATED' : 'backend not checked');
+  }
+  async function checkBackend() {
+    const r = await callApi('ping GET', CONFIG.API_BASE + '?action=ping');
+    if (r.type === 'json' && r.json.status === 'SUCCESS' && r.json.message === 'pong') { backendState = 'ok'; backendVersion = r.json.version || '?'; }
+    else if (r.type === 'json') { backendState = 'outdated'; backendVersion = null; }
+    renderBackend();
+    return backendState;
+  }
+  window.addEventListener('online', checkBackend);
 
   // ---- Offline queue (Story 3.4) ------------------------------------------------------
   function readQueue() {
@@ -1285,6 +1310,7 @@
     const btn = this;
     btn.disabled = true; btn.textContent = '🔄 Refreshing…';
     const r = await fetchRoster();
+    checkBackend();
     btn.disabled = false; btn.textContent = '🔄 Refresh roster';
     const n = Object.keys((readRosterCache() || {}).byCode || {}).length;
     showToast(r === 'ok' ? 'Roster refreshed — ' + n + ' cached' : r === 'unsupported' ? 'Server has no roster endpoint — redeploy Code.gs' : 'Offline — using cached roster');
@@ -1318,14 +1344,14 @@
       showToast('Select & copy the highlighted log');
     }
   });
-  $('apiNote').textContent = 'API …' + CONFIG.API_BASE.slice(-18);
+  renderBackend();
 
   // ---- Init -----------------------------------------------------------------------------
   reticleEl.hidden = true; hintEl.hidden = true; // shown once the camera actually starts
   cameraToggleBtn.textContent = '📷 Starting…';
   updateQueueUi();
   updateRosterBadge();
-  callApi('ping GET', CONFIG.API_BASE + '?action=ping'); // warms the container; harmless on a server without ping
+  checkBackend(); // warms the container and shows whether the deployed script is current
   trySyncOfflineQueue();
   fetchRoster();
   requireStation().then(startCamera);

@@ -64,3 +64,4 @@ QA gates: **1 passed** · **2 passed with waiver** (iOS deferred by the user; se
 | US-B14 | As an usher lead, I want the VIP alert to say the seat isn't assigned yet instead of "Table 0", and to flag scans that were queued offline, so an escort isn't misled. | BUG-013 | **Built** (needs redeploy) |
 | US-B15 | As the project lead, I want a report of how long the last 20 VIP alerts took (and whether any failed), so I can prove the 3 s target. | Story 4.1.4 | **Built** — `vipAlertReport()` (needs redeploy) |
 | US-B16 | As the Secretariat, I want a failed Telegram send retried once (and never allowed to block a check-in), so a transient error doesn't lose a VIP alert. | Epic 4 | **Built** (needs redeploy) |
+| US-B17 | As the project lead, I want the scanner to tell me when the deployed server script is out of date, so a stale deployment never again looks like random "Unknown action." errors. | BUG-012 | **Built** — `ping` version + red dot/warning |

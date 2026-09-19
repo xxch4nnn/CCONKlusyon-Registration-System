@@ -11,6 +11,7 @@
   const results = [];
   let calls = [];
   let server = null;
+  let pingHandler = null;
 
   // ---- fake responses ---------------------------------------------------------------------
   const resp = (body, over) => Object.assign({
@@ -50,7 +51,8 @@
     else { action = (u.match(/action=([a-z]+)/) || [])[1]; code = decodeURIComponent((u.match(/attendance_code=([^&]*)/) || [])[1] || ''); }
     const rec = { method, action, code, url: u, body };
     // Background traffic the scanner makes on its own is answered but not counted as a "call".
-    if (action === 'roster' || action === 'ping') return Promise.resolve(json({ status: 'SUCCESS', attendees: [] }));
+    if (action === 'ping') return pingHandler ? pingHandler(rec, init) : Promise.resolve(json({ status: 'SUCCESS', message: 'pong', version: 'test' }));
+    if (action === 'roster') return Promise.resolve(json({ status: 'SUCCESS', attendees: [] }));
     calls.push(rec);
     if (!server) return Promise.reject(new TypeError('no server'));
     return server(rec, init);
@@ -74,12 +76,14 @@
     $('toast').classList.remove('show');
     calls = [];
     server = null;
+    pingHandler = null;
   };
 
   window.h = {
     T, check, sleep, modalOpen, modalText, toastText, setFast, json, html, unk, ok, dup, notFound, later, sheetServer,
     get calls() { return calls; },
     setServer(fn) { server = fn; },
+    setPing(fn) { pingHandler = fn; },
     codes() { return calls.filter((c) => c.action === 'checkin').map((c) => c.code); },
     // The camera decode callback. Falls back to onScanSuccess on builds that predate the decode guard,
     // which is exactly how the old scanner received raw decodes.

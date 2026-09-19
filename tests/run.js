@@ -101,6 +101,8 @@ const SCANNER_EXPOSE = `
     parsePassCode: __opt(function () { return parsePassCode; }),
     requireStation: __opt(function () { return requireStation; }),
     validStation: __opt(function () { return validStation; }),
+    checkBackend: __opt(function () { return checkBackend; }),
+    resetBackendState: function () { __opt(function () { backendState = 'unknown'; backendVersion = null; renderBackend(); }); },
     get deviceId() { return deviceId; },
     // Re-read the station from storage (tests clear/seed localStorage, then call this).
     resyncStation: function () { __opt(function () { deviceId = storedStation(); }); },
