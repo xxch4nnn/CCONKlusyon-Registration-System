@@ -99,6 +99,8 @@ apps-script/
 docs/
   mvp-spec.md           original MVP spec (Sept 13 snapshot; deviations noted at the top)
   sprint-backlog.md     Epic/Story/Task backlog + the 5 QA gates
+  bug-log.md            bugs + QA gate status (gate-explicit bugs block; others are logged here)
+  user-stories.md       status of every user story / backlog story
   api-contract.md       endpoint request/response shapes
   db-schema.md          Master_Attendance columns A-M
   private/              gitignored, local only: PM dossier + SDLC stages 1-3 (name real people)

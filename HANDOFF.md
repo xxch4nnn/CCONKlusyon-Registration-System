@@ -48,6 +48,10 @@ is only the top-level status snapshot.
 
 ## Open items
 
+- **QA Gate 2 is NOT passed** — see `docs/bug-log.md` for the box-by-box status and BUG-001…006, and
+  `docs/user-stories.md` for every story's state. BUG-003/004 (phantom scanner pop-ups) are logged, not fixed;
+  they're the recommended next change once you give the go-ahead.
+
 - **"Unknown action." on the first scan — mitigated, root cause unproven.** Hardening + a Connection log
   shipped (see the Sept 19 `CHANGES.md` entry). Needs: redeploy `Code.gs`, then the 10-scan trial in
   `tests/README.md`. If the log confirms a POST→GET downgrade, flip check-in to GET-primary.

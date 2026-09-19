@@ -5,6 +5,25 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-19 — Device bug report logged; QA Gate 2 assessed (not passed); duplicate-scan bug fixed
+**By:** user (device testing) + Claude
+**Reported:** false "already checked in" card right after a good scan; scanning continuing while a card is
+open; pop-ups while not scanning; alerts with no pass QR in view. Logged in [`docs/bug-log.md`](../docs/bug-log.md)
+as BUG-001…004 (plus BUG-005 "Unknown action." and BUG-006 latency risk); all stories logged in
+[`docs/user-stories.md`](../docs/user-stories.md).
+**QA decision (per the rule: gate-explicit bugs block and get fixed, others are logged):** Gate 2 is **not
+passed** — box 2 (duplicate correctly flagged) failed, box 5 (iOS + Android) was never done, box 1's
+"under 3 s" isn't demonstrated. So development does not advance to the beta/Epic 6.
+**Fixed (gate-explicit) — BUG-001/002:** the 2 s scan freeze expired before the server's 1.3–4.4 s reply and the
+"card open" guard only turned true on reply, so the same QR still in frame produced a second request and a real
+`DUPLICATE`. Now nothing new is accepted while a check-in is in flight (except different codes in fast mode), and
+the same code is ignored for 6 s from when its answer arrives (survives auto-dismiss). The "keep scanning" switch,
+which my settings rewrite had made persistent, is per-session again. Reproduced on the old code (one scan → two
+requests) and passing on the new in a headless-browser test; **not yet confirmed on a phone.**
+**Logged, not fixed — BUG-003/004:** phantom pop-ups/alerts. Suspected cause: my UI rewrite removed the fixed scan
+box, so the whole frame is decoded (native BarcodeDetector) and any decode — noise or another QR — is submitted
+without checking it looks like a 5-digit pass. Proposed fix is written up in the bug log and is the recommended next change.
+
 ## 2026-09-19 — "Unknown action." on the first check-in: audit, hardening, diagnostics
 **By:** user (report) + Claude
 **Symptom:** the first check-in scan often showed an error card reading "Unknown action…".

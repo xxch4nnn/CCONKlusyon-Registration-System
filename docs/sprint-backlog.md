@@ -93,6 +93,8 @@ Covers Epics 2 + 3 together, once both are built — this is the full attendee j
 
 **Verdict:** Pass → proceed to Epics 4 & 5. Fail → fix and re-run this gate only.
 
+**Current status (2026-09-19): NOT PASSED** — box 2 failed (false duplicate card, BUG-001; fixed in code, needs device retest), box 5 (iOS + Android) not done, box 1 latency ≤3 s not demonstrated. Details: [`bug-log.md`](./bug-log.md).
+
 ## 4. Epic: Telegram VIP Relay (D-4)
 
 **Status: CODE COMPLETE, awaiting credentials (2026-09-19).** 4.1.2/4.1.3 done in `Code.gs` (alert sent after the lock is released; template per spec). 4.1.1 is user-side; 4.1.4 needs a VIP test row. Run `testTelegramPing()` then `testVipAlertTemplate()` in the Apps Script editor after adding the Script Properties, then redeploy as a new version of the existing deployment.
