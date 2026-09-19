@@ -27,8 +27,9 @@ when it happens.
   - **Registration DB tab:** `Master_Attendance` (gid=155323925) — the only tab Claude may write to
     (via Apps Script the user deploys — Claude does not write to any Sheet directly).
   - All other tabs in that workbook (Event Checklist, etc.) are read-only reference for Claude.
-- **Telegram bot token / chat ID:** not yet provisioned. Never enters chat — pasted directly into
-  Apps Script ScriptProperties by the user.
+- **Telegram bot token / chat ID:** not yet provisioned (Epic 4 code is done and waiting on these).
+  Never enters chat — pasted directly into Apps Script Script Properties as `TELEGRAM_BOT_TOKEN` and
+  `TELEGRAM_CHAT_ID`. Verify with `testTelegramPing()` / `testVipAlertTemplate()` in the editor.
 
 ## Master_Attendance schema (confirmed live, 13 columns — supersedes the spec's idealized A-L layout)
 Deviation from spec: the spec describes columns A-L (`email, full_name, org_classification,
@@ -65,11 +66,19 @@ Full request/response shapes: [`docs/api-contract.md`](./docs/api-contract.md). 
 ## Frontend files (zero-build, GitHub Pages)
 - `scanner.html` — Usher Scanner PWA (Epic 3). Single file, `html5-qrcode` via CDN. Wired to
   `POST /api/checkin`, `POST /api/sync`, `GET /api/roster`. `CONFIG.API_BASE` must match the live
-  `/exec` deployment URL. Offline scans queue in `localStorage.cco_offline_scans`, auto-flush on
+  `/exec` deployment URL. Fixed-height (`100dvh`) shell — top bar / camera / bottom dock — so every
+  control is always on screen. Offline scans queue in `localStorage.cco_offline_scans`, auto-flush on
   reconnect; the roster cache (`localStorage.cco_roster_cache`) lets a scan still show tier/name
-  offline. Camera can be toggled off (battery saving) without losing manual-entry function. No
-  manifest/service worker (not in the Epic 3 story list — app-level offline queue only, not full
-  installability).
+  offline. Feedback = loud Web Audio tones + Vibration API haptics (Android only; iOS has no web
+  vibration) + screen flash; per-device settings in `localStorage.cco_scanner_settings`. Camera can be
+  toggled off (battery saving) without losing manual-entry function. No manifest/service worker (not
+  in the Epic 3 story list — app-level offline queue only, not full installability).
+- `display.html` — Projector Live Wall (Epic 5). Single file, no dependencies. Polls
+  `GET ?action=recent` every 4000 ms (first load pulls up to 300 so a mid-event start shows everyone,
+  then `limit=16`) and `GET ?action=roster` every 20 s for the "N of total" counter. `CONFIG.API_BASE`
+  must match `scanner.html`. `CONFIG.SHOWCASE_MODE` (`monogram` | `typographic`) controls the
+  photo-less Regular Attendee fallback; VIP photos fall back to a monogram if the URL fails. A failed
+  poll keeps the last good data on screen and shows "Reconnecting…".
 
 ## Repo structure
 ```
@@ -79,7 +88,7 @@ CHANGES.md              decision log
 HANDOFF.md              status snapshot for whoever picks the project up next
 README.md               overview + deploy steps
 scanner.html            Usher Scanner PWA (Epic 3) — root, so GitHub Pages serves it
-display.html            projector wall (Epic 5) — not built yet, will live at root beside scanner.html
+display.html            projector wall (Epic 5) — root, beside scanner.html
 apps-script/
   Code.gs               backend gateway (paste into the workbook's bound Apps Script project)
   EmailBlaster.gs       entry-pass emails + generic blast engine

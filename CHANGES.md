@@ -5,6 +5,42 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-19 — Scanner UI overhaul + louder audio/haptics; Epic 4 wired; Epic 5 built
+**By:** user (device feedback: offline mode confirmed working; layout overflow, weak audio) + Claude
+**Scanner (`scanner.html`):**
+- **Overflow fix.** Root cause: the page was a normal scrolling column (header wrapping to 3 rows +
+  square camera + buttons + manual panel + checkbox) inside a `100vh` body, so on a phone the bottom —
+  including the "Keep scanning…" checkbox — sat below the visible area. Rebuilt as a fixed-height
+  `100dvh` shell: compact top bar, camera viewport that takes whatever height is left, and a bottom dock
+  that is always on screen (safe-area aware). The keep-scanning control is now a switch in the dock.
+  Header clutter (Refresh roster / Sync now / station rename / sound / haptics) moved into a settings sheet.
+- **Camera** fills the viewport (`object-fit: cover`) with our own reticle + scan-line, and the reticle
+  corners react to each result (green/amber/red/gold). The `qrbox` option was dropped — the whole frame is
+  decoded — because a fixed-pixel qrbox assumes an uncropped video; QR-only formats + native
+  BarcodeDetector enabled where supported.
+- **Audio** made louder: square wave + octave harmonic, repeated beeps (double chirp / double buzz),
+  compressor, Off/Normal/Loud setting (default Loud), and a distinct three-note VIP fanfare. Spec
+  frequencies (800→1200 / 440 / 200 Hz) kept.
+- **Haptics** via the Vibration API with distinct patterns (success, VIP, duplicate, error). Android
+  only — iOS Safari doesn't implement it. Browsers ignore audio/vibration until the first tap, so a
+  "tap once to enable" chip shows until then.
+- **Dynamic UI:** result cards auto-dismiss (2.5 s; VIP 5 s; duplicates/errors never), with a countdown bar;
+  VIP cards get a gold ring + star; session check-in counter; live connection dot; toasts for
+  refresh/sync results; timestamps shown as times, not raw ISO strings.
+**Epic 4 (`apps-script/Code.gs`):** Telegram alert wired for real, template exactly per spec ("Assigned
+Seat", escort CTA). The send now happens **after** the script lock is released (previously it ran inside
+the lock, so every scan waited on Telegram's HTTP round-trip). Failures are logged, never thrown; a
+non-200 from Telegram is logged. Added `testTelegramPing()` and `testVipAlertTemplate()` (reports
+round-trip ms). Mock-tested: SUCCESS/DUPLICATE/NOT_FOUND unchanged, alert fires after unlock.
+**Epic 5 (`display.html`):** built to the spec — 4000 ms polling, hero (3 latest) + grid, Gold/Blue tier
+cards with glow/badges, 300 ms fade/slide-up, monogram/typographic fallbacks, keyed DOM reuse, capped
+DOM size, auto-drift when the grid overflows, "Reconnecting…" state that never blanks the screen.
+Uses `recent` + the existing `roster` endpoint (for "N of total"); no backend change.
+**Roadblocks (mandatory stop):** (1) Epic 4 needs the bot token + chat ID from the user, then a Code.gs
+redeploy (**Manage deployments → edit → New version**). (2) Nothing here was run on real hardware — camera,
+audio loudness, vibration, and the projector at 1080p/4K need device testing. Layout was verified in
+headless Edge at 320-390 px, landscape, 1920x1080 and 3840x2160 with mocked data.
+
 ## 2026-09-19 — Handoff, MVP spec and sprint backlog extracted into the repo
 **By:** user (supplied the docs) + Claude
 **What:** added `HANDOFF.md`, `docs/mvp-spec.md` (Part 1 client + Part 2 technical, from the

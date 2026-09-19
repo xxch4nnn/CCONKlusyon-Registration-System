@@ -55,7 +55,7 @@ One pass, run once Epic 1 is fully built — not after each story above.
 
 ## 3. Epic: Usher Scanner PWA (D-2)
 
-**Status: BUILT, stopped at device-testing checkpoint (2026-09-19).** All 4 stories (3.1 Camera scan core, 3.2 Feedback layer, 3.3 Manual PIN fallback, 3.4 Offline resilience) implemented in a single scanner.html, wired to the live Code.gs API contract. Deviation: no manifest.json/service worker added — not in the story list, offline handling is done at the app level via localStorage per 3.4.1/3.4.2 as specified. Roadblock: camera, flashlight, audio, and the noisy-room/offline-drop QA checks all need a real phone/tablet — user-side from here. Mandatory per-epic stop — awaiting go-ahead before Epic 4.
+**Status: BUILT; offline mode confirmed working on device (2026-09-19); UI/audio/haptics revised after device feedback — see CHANGES.md. Still to verify: bogus code via camera, noisy-room audibility, iOS + Android pass (3.5).** Original status: BUILT, stopped at device-testing checkpoint. All 4 stories (3.1 Camera scan core, 3.2 Feedback layer, 3.3 Manual PIN fallback, 3.4 Offline resilience) implemented in a single scanner.html, wired to the live Code.gs API contract. Deviation: no manifest.json/service worker added — not in the story list, offline handling is done at the app level via localStorage per 3.4.1/3.4.2 as specified. Roadblock: camera, flashlight, audio, and the noisy-room/offline-drop QA checks all need a real phone/tablet — user-side from here. Mandatory per-epic stop — awaiting go-ahead before Epic 4.
 
 **3.1 Story — Camera scan core**
 - 3.1.1 Single-file scanner.html, html5-qrcode via CDN, facingMode: "environment"
@@ -95,6 +95,8 @@ Covers Epics 2 + 3 together, once both are built — this is the full attendee j
 
 ## 4. Epic: Telegram VIP Relay (D-4)
 
+**Status: CODE COMPLETE, awaiting credentials (2026-09-19).** 4.1.2/4.1.3 done in `Code.gs` (alert sent after the lock is released; template per spec). 4.1.1 is user-side; 4.1.4 needs a VIP test row. Run `testTelegramPing()` then `testVipAlertTemplate()` in the Apps Script editor after adding the Script Properties, then redeploy as a new version of the existing deployment.
+
 **4.1 Story — Wire the live alert**
 - 4.1.1 You: create bot via @BotFather, add as Admin to Usher Leadership group, retrieve chat_id — paste both into ScriptProperties yourself (never shared in chat)
 - 4.1.2 Replace Epic 1's stub with the real sendMessage call in doPost, triggered on ticket_type === "VIP Pass"
@@ -102,6 +104,8 @@ Covers Epics 2 + 3 together, once both are built — this is the full attendee j
 - 4.1.4 Check in a VIP test row, time the alert
 
 ## 5. Epic: Projector Live Wall (D-5)
+
+**Status: BUILT (2026-09-19), layout verified with mocked data at 1080p/4K.** 5.1.x done in `display.html`; 5.2.1 error handling built in. Still to do on real hardware: 5.2.2 (30+ min heap watch) and 5.2.3 (real 1080p/4K projector output).
 
 **5.1 Story — Build the wall**
 - 5.1.1 Single-file display.html, poll GET /api/recent?limit=16 every 4000ms

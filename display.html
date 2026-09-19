@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CCOnklusyon 2026 — Live Arrivals</title>
+<!--
+  CCOnklusyon Registration & Check-in System — Projector Live Wall (D-5)
+  Epic 5 / Stories 5.1-5.2 (see docs/mvp-spec.md Component B and docs/sprint-backlog.md)
+
+  Single-file HTML/JS/CSS, zero build step. Open on the Secretariat laptop, press F11 for fullscreen,
+  and mirror/extend to the stage projector (designed for 1920x1080; scales up to 4K).
+
+  Data: polls GET ?action=recent every 4000 ms (spec). The first request asks for a large window so a
+  wall opened mid-event immediately shows everyone already checked in; after that it asks for the
+  spec's limit of 16 and accumulates new arrivals client-side — no backend change needed.
+
+  Layout: hero banner (3 most recent arrivals, large) + grid of everyone else who has arrived.
+  Cards: VIP = gold #B8860B border/glow/"VIP PASS" badge; Regular = royal blue #1A56DB border/"DELEGATE".
+  Photos: VIPs use photo_url. Regular attendees have none by design, so they fall back per
+  CONFIG.SHOWCASE_MODE ('monogram' = initials avatar, 'typographic' = big name only).
+
+  A failed poll never crashes the tab: the last good data stays on screen, a "reconnecting" badge
+  shows, and polling retries with a capped backoff.
+-->
+<style>
+  :root {
+    --gold: #B8860B; --blue: #1A56DB;
+    --bg: #070A12; --panel: #10151F; --text: #F3F4F6; --muted: #8B95A7;
+    --ease: ease-out;
+  }
+  /* Everything is sized in rem and rem tracks the viewport width, so 1080p and 4K look identical. */
+  html { font-size: calc(100vw / 120); }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: radial-gradient(ellipse at 20% 0%, #14203a 0%, var(--bg) 55%);
+    color: var(--text); overflow: hidden; cursor: default;
+    font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  }
+  body.idle { cursor: none; }
+  [hidden] { display: none !important; }
+
+  #wall { display: flex; flex-direction: column; height: 100vh; padding: 1.6rem 2.2rem 1.4rem; gap: 1.2rem; }
+
+  /* ---- Header ---- */
+  header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 2rem; }
+  .brand h1 { margin: 0; font-size: 2.6rem; font-weight: 800; letter-spacing: .04em; }
+  .brand h1 span { color: #F5C542; }
+  .brand p { margin: .15rem 0 0; font-size: 1.05rem; color: var(--muted); letter-spacing: .2em; text-transform: uppercase; }
+  .stats { display: flex; align-items: center; gap: 1.6rem; }
+  .count { text-align: right; line-height: 1; }
+  .count b { font-size: 3.4rem; font-weight: 800; font-variant-numeric: tabular-nums; }
+  .count span { display: block; margin-top: .35rem; font-size: .95rem; color: var(--muted); letter-spacing: .14em; text-transform: uppercase; }
+  .live { display: flex; align-items: center; gap: .55rem; font-size: 1rem; color: var(--muted); }
+  .live i { width: .8rem; height: .8rem; border-radius: 50%; background: #22C55E; box-shadow: 0 0 0 0 rgba(34,197,94,.6); animation: ping 2s infinite; }
+  .live.down i { background: #F59E0B; animation: none; }
+  .live.down { color: #F59E0B; }
+  @keyframes ping { 70% { box-shadow: 0 0 0 .8rem rgba(34,197,94,0); } 100% { box-shadow: 0 0 0 0 rgba(34,197,94,0); } }
+
+  .label { font-size: 1rem; font-weight: 700; letter-spacing: .28em; text-transform: uppercase; color: var(--muted); margin: 0 0 .7rem; }
+
+  /* ---- Hero: 3 most recent arrivals ---- */
+  #heroSection { flex: 0 0 auto; }
+  #hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1.4rem; min-height: 19rem; }
+  .hero-slot { min-height: 19rem; }
+
+  /* ---- Cards ---- */
+  .card {
+    position: relative; display: flex; background: var(--panel); border-radius: 1.1rem; overflow: hidden;
+    border: 3px solid var(--blue);
+  }
+  .card.vip { border-color: var(--gold); box-shadow: 0 0 15px rgba(184,134,11,.4); }
+  .badge { position: absolute; top: .8rem; right: .8rem; padding: .3rem .8rem; border-radius: 999px; font-size: .8rem;
+    font-weight: 800; letter-spacing: .12em; color: #fff; background: var(--blue); }
+  .card.vip .badge { background: var(--gold); }
+  .avatar { flex: 0 0 auto; display: block; object-fit: cover; }
+  .avatar-wrap { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
+  .name { font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
+  .meta { color: #C7CEDA; }
+  .seat { display: inline-block; font-weight: 700; background: rgba(255,255,255,.09); border-radius: 999px; }
+
+  .card.hero { flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 1.6rem 1.4rem 1.4rem; gap: .5rem; min-height: 19rem; }
+  .hero .avatar-wrap { width: 8.4rem; height: 8.4rem; margin-bottom: .4rem; }
+  .hero .avatar { width: 8.4rem; height: 8.4rem; border-radius: 50%; border: 4px solid var(--blue); }
+  .hero.vip .avatar { border-color: var(--gold); }
+  .hero .name { font-size: 2.2rem; }
+  .hero .meta { font-size: 1.15rem; }
+  .hero .seat { font-size: 1.2rem; padding: .35rem 1.1rem; margin-top: .4rem; }
+  .hero .welcome { font-size: .95rem; letter-spacing: .22em; text-transform: uppercase; color: var(--blue); font-weight: 800; }
+  .hero.vip .welcome { color: #F5C542; }
+  .hero.typo .name { font-size: 2.9rem; }
+
+  /* ---- Grid: everyone else ---- */
+  #gridSection { flex: 1 1 0; min-height: 0; display: flex; flex-direction: column; }
+  #gridScroll { flex: 1 1 0; min-height: 0; overflow: hidden; position: relative; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(18.5rem, 1fr)); gap: 1rem; padding: 3px; }
+  .card.tile { align-items: center; gap: .9rem; padding: .8rem 1rem .8rem .8rem; min-height: 6.4rem; }
+  .tile .avatar-wrap, .tile .avatar { width: 3.8rem; height: 3.8rem; }
+  .tile .avatar { border-radius: 50%; }
+  .tile .text { min-width: 0; padding-right: 2.6rem; }
+  .tile .name { font-size: 1.2rem; }
+  .tile .meta { font-size: .88rem; margin-top: .15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tile .badge { top: .5rem; right: .55rem; font-size: .58rem; padding: .18rem .5rem; letter-spacing: .08em; }
+  .tile.typo { padding-left: 1.1rem; }
+  .fade-bottom { position: absolute; left: 0; right: 0; bottom: 0; height: 3rem; pointer-events: none;
+    background: linear-gradient(transparent, var(--bg)); }
+
+  /* Arrival transition: 300ms fade-in + slide-up (spec) */
+  .enter { animation: cardEnter 300ms var(--ease); }
+  @keyframes cardEnter { from { opacity: 0; transform: translateY(1.6rem); } to { opacity: 1; transform: none; } }
+
+  /* ---- Empty state ---- */
+  #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; text-align: center; color: var(--muted); }
+  #empty h2 { margin: 0; font-size: 3.2rem; color: var(--text); }
+  #empty p { margin: 0; font-size: 1.4rem; letter-spacing: .12em; text-transform: uppercase; }
+  #empty .pulse { animation: breathe 3s ease-in-out infinite; }
+  @keyframes breathe { 50% { opacity: .55; } }
+
+  @media (prefers-reduced-motion: reduce) { .enter, .live i, #empty .pulse { animation: none; } }
+</style>
+</head>
+<body>
+<div id="wall">
+  <header>
+    <div class="brand">
+      <h1>CCO<span>nklusyon</span> 2026</h1>
+      <p>Welcome, delegates</p>
+    </div>
+    <div class="stats">
+      <div class="live" id="live"><i></i><span id="liveText">Live</span></div>
+      <div class="count"><b id="countNum">0</b><span id="countLabel">Checked in</span></div>
+    </div>
+  </header>
+
+  <section id="heroSection" hidden>
+    <p class="label">Recent arrivals</p>
+    <div id="hero"></div>
+  </section>
+
+  <section id="gridSection">
+    <p class="label" id="gridLabel" hidden>Also arrived</p>
+    <div id="gridScroll">
+      <div id="grid"></div>
+      <div id="empty">
+        <h2 class="pulse">Welcome to CCOnklusyon 2026</h2>
+        <p class="pulse">Arrivals will appear here as delegates check in</p>
+      </div>
+      <div class="fade-bottom" id="fade" hidden></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(function () {
+  'use strict';
+
+  // ---- CONFIG -----------------------------------------------------------------------
+  const CONFIG = {
+    // Same /exec deployment as scanner.html (update both together if the deployment changes;
+    // remember: "Manage deployments -> edit -> New version" keeps the URL, "+ New deployment" doesn't).
+    API_BASE: 'https://script.google.com/macros/s/AKfycbyUZywdnh62McTK-FJwHlu5ltnrzWI6dnc1v1HMxNwG2PPM1vJO-xsXCz5T-rNrVPVi/exec',
+    POLL_MS: 4000,             // spec: poll every 4000 ms
+    RECENT_LIMIT: 16,          // spec: limit=16 on each poll
+    INITIAL_LIMIT: 300,        // first load only: pull everyone already checked in
+    ROSTER_REFRESH_MS: 20000,  // total/checked-in counter (uses GET ?action=roster, no email)
+    FETCH_TIMEOUT_MS: 9000,
+    MAX_BACKOFF_MS: 12000,
+    HERO_COUNT: 3,
+    MAX_TILES: 400,            // cap on grid DOM size so an all-day run can't grow without bound
+    SHOWCASE_MODE: 'monogram', // regular attendees have no photo: 'monogram' (initials avatar) | 'typographic' (name only)
+    SCROLL_PX_PER_SEC: 22,     // slow drift when the grid is taller than the screen
+    SCROLL_PAUSE_MS: 3500
+  };
+  const TIER = {
+    'VIP Pass': { cls: 'vip', badge: 'VIP PASS', color: '#B8860B' },
+    'Regular Attendee': { cls: 'reg', badge: 'DELEGATE', color: '#1A56DB' }
+  };
+
+  const $ = function (id) { return document.getElementById(id); };
+  const store = new Map();          // key -> attendee (+ .key, .ts, .fresh)
+  const heroEls = new Map(), tileEls = new Map();
+  let totalRoster = 0;
+
+  // ---- Small helpers -------------------------------------------------------------------
+  function keyOf(a) { return (a.full_name || '') + '|' + (a.checkin_timestamp || ''); }
+  function tsOf(a) { const t = Date.parse(a.checkin_timestamp); return isNaN(t) ? 0 : t; }
+  function tierOf(a) { return TIER[a.ticket_type] || TIER['Regular Attendee']; }
+  function safeUrl(u) { return /^https?:\/\//i.test(String(u || '')) ? String(u) : ''; }
+
+  const TITLES = /^(dr|engr|prof|atty|mr|mrs|ms|sir|hon|arch|fr|rev)\.?$/i;
+  function initials(name) {
+    const parts = String(name || '').replace(/[(),]/g, ' ').split(/\s+/).filter(function (w) { return w && !TITLES.test(w); });
+    if (!parts.length) return '?';
+    const first = parts[0][0], last = parts.length > 1 ? parts[parts.length - 1][0] : '';
+    return (first + last).toUpperCase();
+  }
+  function hueOf(name) {
+    let h = 0; const s = String(name || '');
+    for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+    return h;
+  }
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = text;
+    return n;
+  }
+
+  // Monogram avatar as inline SVG (spec 5.1.5): tier-tinted circle + initials, stable colour per name.
+  function monogramSvg(name, tier) {
+    const NS = 'http://www.w3.org/2000/svg';
+    const svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 100 100');
+    svg.setAttribute('class', 'avatar');
+    svg.setAttribute('aria-hidden', 'true');
+    const hue = tier.cls === 'vip' ? 43 : 218 + (hueOf(name) % 30) - 15;
+    const c = document.createElementNS(NS, 'circle');
+    c.setAttribute('cx', '50'); c.setAttribute('cy', '50'); c.setAttribute('r', '50');
+    c.setAttribute('fill', 'hsl(' + hue + ',55%,32%)');
+    const t = document.createElementNS(NS, 'text');
+    t.setAttribute('x', '50'); t.setAttribute('y', '50');
+    t.setAttribute('text-anchor', 'middle'); t.setAttribute('dominant-baseline', 'central');
+    t.setAttribute('font-size', '40'); t.setAttribute('font-weight', '800'); t.setAttribute('fill', '#fff');
+    t.setAttribute('font-family', 'Segoe UI, system-ui, sans-serif');
+    t.textContent = initials(name);
+    svg.appendChild(c); svg.appendChild(t);
+    return svg;
+  }
+
+  // Avatar per showcase policy. Returns null in typographic mode for photo-less attendees.
+  function buildAvatar(a, tier) {
+    const photo = safeUrl(a.photo_url);
+    const wrap = el('div', 'avatar-wrap');
+    if (photo) {
+      const img = document.createElement('img');
+      img.className = 'avatar'; img.alt = ''; img.loading = 'eager'; img.decoding = 'async';
+      img.referrerPolicy = 'no-referrer';
+      // Broken/blocked photo must never leave a hole: swap in the monogram.
+      img.onerror = function () { wrap.replaceChildren(monogramSvg(a.full_name, tier)); };
+      img.src = photo;
+      wrap.appendChild(img);
+      return wrap;
+    }
+    if (CONFIG.SHOWCASE_MODE === 'typographic') return null;
+    wrap.appendChild(monogramSvg(a.full_name, tier));
+    return wrap;
+  }
+
+  function buildCard(a, mode) { // mode: 'hero' | 'tile'
+    const tier = tierOf(a);
+    const avatar = buildAvatar(a, tier);
+    const card = el('div', 'card ' + mode + ' ' + tier.cls + (avatar ? '' : ' typo'));
+    card.appendChild(el('span', 'badge', tier.badge));
+    if (a.fresh) {
+      card.classList.add('enter');
+      card.addEventListener('animationend', function () { card.classList.remove('enter'); }, { once: true });
+    }
+    const role = [a.designation, a.club_name].filter(Boolean).join(' · ');
+    if (mode === 'hero') {
+      if (avatar) card.appendChild(avatar);
+      card.appendChild(el('div', 'welcome', 'Welcome'));
+      card.appendChild(el('div', 'name', a.full_name || ''));
+      if (role) card.appendChild(el('div', 'meta', role));
+      if (a.table_allocation) card.appendChild(el('span', 'seat', String(a.table_allocation)));
+    } else {
+      if (avatar) card.appendChild(avatar);
+      const text = el('div', 'text');
+      text.appendChild(el('div', 'name', a.full_name || ''));
+      // Two short lines beat one long ellipsised line: role first, then the org.
+      if (a.designation) text.appendChild(el('div', 'meta', a.designation));
+      if (a.club_name) text.appendChild(el('div', 'meta', a.club_name));
+      card.appendChild(text);
+    }
+    return card;
+  }
+
+  // ---- Render (keyed, so existing cards — and their loaded photos — are reused) ------------
+  function sync(container, items, cache, mode) {
+    const frag = document.createDocumentFragment();
+    const keep = new Set();
+    items.forEach(function (a) {
+      let node = cache.get(a.key);
+      if (!node) { node = buildCard(a, mode); cache.set(a.key, node); }
+      keep.add(a.key);
+      frag.appendChild(node);
+    });
+    cache.forEach(function (_, k) { if (!keep.has(k)) cache.delete(k); });
+    container.replaceChildren(frag);
+  }
+
+  function render() {
+    const sorted = Array.from(store.values()).sort(function (x, y) { return y.ts - x.ts; });
+    const hero = sorted.slice(0, CONFIG.HERO_COUNT);
+    const rest = sorted.slice(CONFIG.HERO_COUNT, CONFIG.HERO_COUNT + CONFIG.MAX_TILES);
+    sync($('hero'), hero, heroEls, 'hero');
+    sync($('grid'), rest, tileEls, 'tile');
+    sorted.forEach(function (a) { a.fresh = false; }); // animate once, on first render only
+
+    const any = sorted.length > 0;
+    $('heroSection').hidden = !any;
+    $('empty').hidden = any;
+    $('gridLabel').hidden = rest.length === 0;
+    updateCount();
+    // A resize/insert can change whether the grid overflows.
+    requestAnimationFrame(measureScroll);
+  }
+
+  function updateCount() {
+    // Prefer the sheet's own numbers (roster) when we have them; fall back to what this wall has seen.
+    const shown = Math.max(store.size, checkedInFromRoster);
+    $('countNum').textContent = shown;
+    $('countLabel').textContent = totalRoster ? 'of ' + totalRoster + ' checked in' : 'Checked in';
+  }
+
+  // ---- Network -----------------------------------------------------------------------------
+  async function getJson(query) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(function () { ctrl.abort(); }, CONFIG.FETCH_TIMEOUT_MS);
+    try {
+      const res = await fetch(CONFIG.API_BASE + query, { signal: ctrl.signal });
+      const json = await res.json();
+      if (json && json.status === 'SUCCESS') return json;
+      throw new Error('Bad response');
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function ingest(list, animate) {
+    let changed = false;
+    list.forEach(function (a) {
+      if (!a || !a.full_name) return;
+      const key = keyOf(a);
+      if (store.has(key)) return;
+      store.set(key, Object.assign({}, a, { key: key, ts: tsOf(a), fresh: animate }));
+      changed = true;
+    });
+    // Keep memory bounded on a very long run: drop the oldest beyond the visible window.
+    const cap = CONFIG.MAX_TILES + CONFIG.HERO_COUNT;
+    if (store.size > cap) {
+      Array.from(store.values()).sort(function (x, y) { return y.ts - x.ts; }).slice(cap)
+        .forEach(function (a) { store.delete(a.key); });
+      changed = true;
+    }
+    if (changed) render();
+  }
+
+  let firstLoadDone = false, fails = 0;
+  function setLive(ok) {
+    $('live').classList.toggle('down', !ok);
+    $('liveText').textContent = ok ? 'Live' : 'Reconnecting…';
+  }
+  async function poll() {
+    try {
+      const json = await getJson('?action=recent&limit=' + (firstLoadDone ? CONFIG.RECENT_LIMIT : CONFIG.INITIAL_LIMIT));
+      ingest(json.attendees, firstLoadDone); // first load fills the wall silently; later arrivals animate in
+      firstLoadDone = true; fails = 0; setLive(true);
+    } catch (err) {
+      fails++; setLive(false); // keep showing the last good data
+    } finally {
+      const wait = fails ? Math.min(CONFIG.POLL_MS * Math.pow(2, Math.min(fails, 2)), CONFIG.MAX_BACKOFF_MS) : CONFIG.POLL_MS;
+      setTimeout(poll, wait);
+    }
+  }
+
+  let checkedInFromRoster = 0;
+  async function pollRoster() {
+    try {
+      const json = await getJson('?action=roster');
+      totalRoster = json.attendees.length;
+      checkedInFromRoster = json.attendees.filter(function (a) { return a.checkin_status === 'Checked-In'; }).length;
+      updateCount();
+    } catch (err) { /* counter simply keeps its last value */ }
+    setTimeout(pollRoster, CONFIG.ROSTER_REFRESH_MS);
+  }
+
+  // ---- Gentle auto-scroll when the grid is taller than the screen --------------------------
+  const reduceMotion = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const scroller = $('gridScroll');
+  let pos = 0, dir = 1, pausedUntil = 0, lastT = 0, overflowing = false;
+  function measureScroll() {
+    overflowing = !reduceMotion && scroller.scrollHeight > scroller.clientHeight + 4;
+    $('fade').hidden = !overflowing;
+    if (!overflowing) { pos = 0; scroller.scrollTop = 0; }
+  }
+  function frame(t) {
+    const dt = lastT ? Math.min(t - lastT, 100) : 0; lastT = t;
+    if (overflowing && t >= pausedUntil) {
+      const max = scroller.scrollHeight - scroller.clientHeight;
+      pos += dir * CONFIG.SCROLL_PX_PER_SEC * dt / 1000;
+      if (pos >= max) { pos = max; dir = -1; pausedUntil = t + CONFIG.SCROLL_PAUSE_MS; }
+      else if (pos <= 0) { pos = 0; dir = 1; pausedUntil = t + CONFIG.SCROLL_PAUSE_MS; }
+      scroller.scrollTop = pos;
+    }
+    requestAnimationFrame(frame);
+  }
+  window.addEventListener('resize', measureScroll);
+
+  // Hide the mouse pointer on the projector after a moment of inactivity.
+  let idleTimer = null;
+  function wake() { document.body.classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(function () { document.body.classList.add('idle'); }, 3000); }
+  window.addEventListener('mousemove', wake);
+  wake();
+
+  // ---- Init -----------------------------------------------------------------------------
+  render();
+  poll();
+  pollRoster();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 # Handoff — CCOnklusyon Registration & Check-in System
 
-Written 2026-09-19, end of a cloud-session build stretch (Epics 1-3), for whoever/whatever
+Written 2026-09-19, updated after the Epic 4/5 build in a local session, for whoever/whatever
 picks this up next — most likely a local Claude Code session with GitHub push access, since
 that's where write access to this repo currently works from.
 
@@ -19,37 +19,46 @@ is only the top-level status snapshot.
   blast engine (`sendCustomBlast`, any future announcement) plus the invitation-pass layer on
   top of it. Beta-tested live, one pass per test address, confirmed working. **Complete.**
 - **Epic 3 — Usher Scanner PWA** (`scanner.html`, repo root). Camera scan, manual PIN fallback,
-  offline queue + auto-sync, audio/visual feedback, tier-colored result cards, battery-saving
-  camera toggle, roster-cache offline VIP ID, a scan-buffer fix (pauses while a result card is
-  open, with an opt-out checkbox), and manual "Refresh roster" / "Sync now" buttons. **Built and
-  live-testing on a real device — see Open Items below.**
+  offline queue + auto-sync, tier-colored result cards, battery-saving camera toggle, roster-cache
+  offline VIP ID (**confirmed working on a real device**), scan-buffer fix, and — after device
+  feedback — a fixed-height layout (nothing below the fold), louder audio, haptics (Android),
+  auto-dismissing cards and a settings sheet. See the Sept 19 `CHANGES.md` entries.
+- **Epic 4 — Telegram VIP Alert** (`apps-script/Code.gs`). Code complete: real `sendMessage` call with
+  the spec's template, sent after the script lock is released, failures logged not thrown. **Blocked
+  on credentials** — see "Do next" below.
+- **Epic 5 — Projector Wall** (`display.html`, repo root). Built to spec (4 s polling, hero + grid,
+  Gold/Blue cards, monogram/typographic fallbacks, reconnect state). Layout verified with mocked
+  data at 1080p and 4K; not yet run against the live sheet on a projector.
 
-## Not started yet
+## Do next (user-side — nothing here can be done from a Claude session)
 
-- **Epic 4 — Telegram VIP Alerts.** `notifyVipTelegram_()` is stubbed in `Code.gs` (silently
-  no-ops if `TELEGRAM_BOT_TOKEN`/`TELEGRAM_CHAT_ID` aren't set) but never wired up for real —
-  needs the bot token/chat ID provisioned (never share those in chat — paste directly into
-  Apps Script Script Properties).
-- **Epic 5 — Projector Wall** (`display.html`, not built). Feeds off the already-live
-  `GET /api/recent` endpoint. Must implement the two showcase-mode fallbacks noted in the
-  schema table (VIP curated photo vs. Regular Attendee typographic/monogram card).
-- **Epics 6-8** — Beta Simulation, Production Hardening/DoD, Event Day — per the Sprint Backlog
-  doc, not touched.
+1. **Redeploy `Code.gs`**: paste `apps-script/Code.gs` into the Apps Script project, then
+   **Deploy → Manage deployments → pencil/edit → Version: New version → Deploy**. (Never "+ New
+   deployment" — it mints a new URL and strands `scanner.html`/`display.html`. See `AGENTS.md`.)
+2. **Provision Telegram** (Story 4.1.1): create a bot via @BotFather, add it to the usher leadership
+   group as admin, get the group's `chat_id`, and paste both into **Project Settings → Script
+   properties** as `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`. Never paste them into chat or the repo.
+3. In the editor run `testTelegramPing()`, then `testVipAlertTemplate()` (logs round-trip ms), then
+   check in a VIP test row from the scanner and time the alert (target ≤ 3 s).
+4. **Device-test the new scanner** on real phones: camera still decodes with the full-screen preview,
+   audio is loud enough, vibration works (Android), the switch/buttons fit on your smallest phone.
+5. **Open `display.html`** on the Secretariat laptop (F11) and check a few rows in from the scanner —
+   arrivals should appear within one 4 s poll. Then QA Gate 3 and the 30-minute long-run (5.2.2).
+6. Epics 6-8 (Beta Simulation, Production Hardening/DoD, Event Day) — per `docs/sprint-backlog.md`.
 
-## Open items on Epic 3 (in progress when this session ended)
+## Open items
 
-- Roster caching and the offline-mode banner were both broken by a **deployment URL mismatch**
-  (redeploying via "+ New deployment" instead of "Manage deployments → edit → New version" mints
-  a new `/exec` URL and silently strands `scanner.html`'s `CONFIG.API_BASE` on the old one — see
-  `CHANGES.md`, Sept 19 entries, and the gotcha now documented in `AGENTS.md`). Just fixed and
-  pushed; **not yet re-verified against a real airplane-mode test** — that's the next thing to
-  confirm before calling Epic 3 done.
-- Still untested: bogus/invalid code via the camera (only tested via manual entry so far), and
-  audibility of the feedback tones in an actual noisy room (Story 3.2.3, QA Gate 2 checklist).
-- `CONFIG.API_BASE` in `scanner.html` currently points at the Version 4 deployment
-  (`.../AKfycbyUZywdnh62McTK-FJwHlu5ltnrzWI6dnc1v1HMxNwG2PPM1vJO-xsXCz5T-rNrVPVi/exec`) — confirm
-  this is still the deployment in use before debugging anything that looks like a connectivity
-  issue; if it's been redeployed again since, check `AGENTS.md`'s gotcha section first.
+- Still untested on Epic 3: bogus/invalid code via the camera (only tested via manual entry so far),
+  noisy-room audibility (Story 3.2.3), and the iOS Safari + Android Chrome pass (Story 3.5).
+- `qrbox` was removed from the scanner (whole frame is decoded). If scanning feels slower or less
+  reliable than before on a low-end phone, that's the first thing to revisit.
+- `CONFIG.API_BASE` in **both** `scanner.html` and `display.html` points at the Version 4 deployment
+  (`.../AKfycbyUZywdnh62McTK-FJwHlu5ltnrzWI6dnc1v1HMxNwG2PPM1vJO-xsXCz5T-rNrVPVi/exec`) — confirm this is
+  still the deployment in use before debugging anything that looks like a connectivity issue.
+- Load note: the wall polls every 4 s (~8,100 executions over a 9-hour day) plus scanners and the 20 s
+  roster poll. The spec's 20,000/day figure is for *outbound* URL Fetch calls (Telegram), which polling
+  doesn't use — polling costs Apps Script execution time instead. Watch the Executions dashboard during the
+  Epic 6 beta, and only leave the wall open during the event window, not overnight.
 
 ## Process notes worth carrying forward
 

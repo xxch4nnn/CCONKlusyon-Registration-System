@@ -115,59 +115,69 @@ function handleCheckin_(body) {
     return jsonOut_({ status: 'ERROR', message: 'System busy, retry shortly.' });
   }
 
+  let result;
   try {
-    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-    const data = sheet.getDataRange().getValues();
-
-    for (let r = 1; r < data.length; r++) {
-      const row = data[r];
-      if (String(row[COL.ATTENDANCE_CODE - 1]).trim() === code) {
-        const status = row[COL.CHECKIN_STATUS - 1];
-
-        if (status === 'Checked-In') {
-          return jsonOut_({
-            status: 'DUPLICATE',
-            message: 'Attendee has already checked in.',
-            data: {
-              full_name: row[COL.FULL_NAME - 1],
-              initial_checkin_timestamp: row[COL.CHECKIN_TS - 1],
-              table_allocation: row[COL.TABLE_ALLOC - 1]
-            }
-          });
-        }
-
-        const nowIso = Utilities.formatDate(new Date(), 'GMT+8', "yyyy-MM-dd'T'HH:mm:ssXXX");
-        sheet.getRange(r + 1, COL.CHECKIN_STATUS).setValue('Checked-In');
-        sheet.getRange(r + 1, COL.CHECKIN_TS).setValue(nowIso);
-        sheet.getRange(r + 1, COL.CHECKED_IN_BY).setValue(deviceId);
-
-        const result = {
-          status: 'SUCCESS',
-          message: 'Attendee validated successfully.',
-          data: {
-            attendance_code: code,
-            full_name: row[COL.FULL_NAME - 1],
-            club_name: row[COL.CLUB_NAME - 1],
-            designation: row[COL.DESIGNATION - 1],
-            ticket_type: row[COL.TICKET_TYPE - 1],
-            table_allocation: row[COL.TABLE_ALLOC - 1],
-            photo_url: row[COL.PHOTO_URL - 1],
-            checkin_timestamp: nowIso
-          }
-        };
-
-        if (row[COL.TICKET_TYPE - 1] === 'VIP Pass') {
-          try { notifyVipTelegram_(result.data); } catch (err) { /* never block check-in on Telegram failure */ }
-        }
-
-        return jsonOut_(result);
-      }
-    }
-
-    return jsonOut_({ status: 'NOT_FOUND', message: 'Attendance code does not exist in master records.' });
+    result = processCheckin_(code, deviceId);
   } finally {
     lock.releaseLock();
   }
+
+  // Telegram runs AFTER the lock is released: the HTTP call takes hundreds of ms, and holding the
+  // script lock across it would make every other usher's scan wait behind a VIP alert.
+  if (result.status === 'SUCCESS' && result.data.ticket_type === 'VIP Pass') {
+    try {
+      notifyVipTelegram_(result.data);
+    } catch (err) {
+      console.error('VIP Telegram alert failed: ' + err); // never block or fail a check-in over Telegram
+    }
+  }
+
+  return jsonOut_(result);
+}
+
+/** Sheet lookup + write for one check-in. Caller MUST hold the script lock. Returns a plain object. */
+function processCheckin_(code, deviceId) {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+  const data = sheet.getDataRange().getValues();
+
+  for (let r = 1; r < data.length; r++) {
+    const row = data[r];
+    if (String(row[COL.ATTENDANCE_CODE - 1]).trim() !== code) continue;
+
+    if (row[COL.CHECKIN_STATUS - 1] === 'Checked-In') {
+      return {
+        status: 'DUPLICATE',
+        message: 'Attendee has already checked in.',
+        data: {
+          full_name: row[COL.FULL_NAME - 1],
+          initial_checkin_timestamp: row[COL.CHECKIN_TS - 1],
+          table_allocation: row[COL.TABLE_ALLOC - 1]
+        }
+      };
+    }
+
+    const nowIso = Utilities.formatDate(new Date(), 'GMT+8', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    sheet.getRange(r + 1, COL.CHECKIN_STATUS).setValue('Checked-In');
+    sheet.getRange(r + 1, COL.CHECKIN_TS).setValue(nowIso);
+    sheet.getRange(r + 1, COL.CHECKED_IN_BY).setValue(deviceId);
+
+    return {
+      status: 'SUCCESS',
+      message: 'Attendee validated successfully.',
+      data: {
+        attendance_code: code,
+        full_name: row[COL.FULL_NAME - 1],
+        club_name: row[COL.CLUB_NAME - 1],
+        designation: row[COL.DESIGNATION - 1],
+        ticket_type: row[COL.TICKET_TYPE - 1],
+        table_allocation: row[COL.TABLE_ALLOC - 1],
+        photo_url: row[COL.PHOTO_URL - 1],
+        checkin_timestamp: nowIso
+      }
+    };
+  }
+
+  return { status: 'NOT_FOUND', message: 'Attendance code does not exist in master records.' };
 }
 
 /** Endpoint 2: recent arrivals feed for the projector wall (D-5). */
@@ -233,24 +243,79 @@ function handleSync_(body) {
   return jsonOut_({ status: 'SUCCESS', results: results });
 }
 
-/** Real wiring lands fully in Epic 4 once bot token/chat_id are provisioned. */
+/**
+ * Epic 4 — VIP Telegram alert. Credentials live ONLY in Script Properties (Project Settings ->
+ * Script properties): TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID. Never put them in this file.
+ * Returns true if Telegram accepted the message; false if not provisioned or Telegram refused it.
+ */
 function notifyVipTelegram_(attendeeData) {
-  const token = PropertiesService.getScriptProperties().getProperty('TELEGRAM_BOT_TOKEN');
-  const chatId = PropertiesService.getScriptProperties().getProperty('TELEGRAM_CHAT_ID');
-  if (!token || !chatId) return; // not provisioned yet — silently skip, do not throw
+  const props = PropertiesService.getScriptProperties();
+  const token = props.getProperty('TELEGRAM_BOT_TOKEN');
+  const chatId = props.getProperty('TELEGRAM_CHAT_ID');
+  if (!token || !chatId) return false; // not provisioned — silently skip, do not throw
 
+  const blank = function (v) { return v ? String(v) : '—'; };
+  const club = attendeeData.club_name ? ' (' + attendeeData.club_name + ')' : '';
+  const time = Utilities.formatDate(new Date(), 'GMT+8', 'h:mm:ss a');
+
+  // Template per MVP spec, Component C.
   const text = '⭐ VIP ARRIVAL DETECTED ⭐\n' +
-    'Name: ' + attendeeData.full_name + '\n' +
-    'Role: ' + attendeeData.designation + ' (' + attendeeData.club_name + ')\n' +
-    'Table: ' + attendeeData.table_allocation + '\n' +
-    'Time: ' + attendeeData.checkin_timestamp + '\n\n' +
-    '👉 Designated Escort: please acknowledge and proceed to Entrance.';
+    'Name: ' + blank(attendeeData.full_name) + '\n' +
+    'Role: ' + blank(attendeeData.designation) + club + '\n' +
+    'Assigned Seat: ' + blank(attendeeData.table_allocation) + '\n' +
+    'Time: ' + time + '\n\n' +
+    '👉 Designated Escort: Usher Lead please acknowledge and proceed to Entrance.';
 
-  UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+  const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
     method: 'post',
     contentType: 'application/json',
-    payload: JSON.stringify({ chat_id: chatId, text: text })
+    payload: JSON.stringify({ chat_id: chatId, text: text }),
+    muteHttpExceptions: true // read the status ourselves so a refusal is logged instead of thrown
   });
+  if (res.getResponseCode() !== 200) {
+    console.error('Telegram sendMessage failed: HTTP ' + res.getResponseCode() + ' ' + res.getContentText());
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Story 4.1.1 check — run from the editor after pasting the two Script Properties. Sends a plain
+ * ping to the usher group (no attendee data) and logs whether Telegram accepted it. No underscore
+ * in the name so it shows in the Run dropdown.
+ */
+function testTelegramPing() {
+  const props = PropertiesService.getScriptProperties();
+  const token = props.getProperty('TELEGRAM_BOT_TOKEN');
+  const chatId = props.getProperty('TELEGRAM_CHAT_ID');
+  if (!token || !chatId) {
+    console.log('Missing TELEGRAM_BOT_TOKEN and/or TELEGRAM_CHAT_ID. Add them under Project Settings -> Script properties.');
+    return;
+  }
+  const res = UrlFetchApp.fetch('https://api.telegram.org/bot' + token + '/sendMessage', {
+    method: 'post',
+    contentType: 'application/json',
+    payload: JSON.stringify({ chat_id: chatId, text: '✅ CCOnklusyon check-in bot connected. (test ping)' }),
+    muteHttpExceptions: true
+  });
+  console.log('Telegram responded HTTP ' + res.getResponseCode() + ': ' + res.getContentText());
+}
+
+/**
+ * Story 4.1.3 / 4.1.4 helper — sends the real VIP alert template with obviously fake data and logs
+ * how long the Telegram round-trip took (spec target: alert within 3s of the scan). Does NOT touch
+ * the sheet. Run it, check the message in the group, then do the real end-to-end test by checking
+ * in a VIP test row from the scanner.
+ */
+function testVipAlertTemplate() {
+  const t0 = Date.now();
+  const sent = notifyVipTelegram_({
+    full_name: 'TEST — Dr. Sample VIP',
+    designation: 'Organization Adviser',
+    club_name: 'Test Club',
+    table_allocation: 'VIP Table 01'
+  });
+  console.log((sent ? 'Sent' : 'NOT sent (check Script Properties / logs)') + ' in ' + (Date.now() - t0) + ' ms');
 }
 
 function jsonOut_(obj) {
