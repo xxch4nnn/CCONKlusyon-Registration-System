@@ -12,7 +12,7 @@ the Epic/Story/Task detail and the QA gates are in [`sprint-backlog.md`](./sprin
 | US-001 | Attendee | Receive an email pass with a clear QR, PIN and seat | **Done** | Beta send confirmed (Epic 2); QR = bare 5-digit code |
 | US-002 | Entrance Usher | Scan passes in a phone browser and validate in under 3 s | **Built** | Works on device; false-duplicate bug **verified fixed**; phantom-decode fix awaiting retest; **≤3 s not yet demonstrated** (BUG-006) |
 | US-003 | Entrance Usher | Type a 5-digit PIN and see name + tier colour | **Done** | Verified on device (Gold/Blue card) |
-| US-004 | Usher Lead | Instant Telegram alert when a VIP arrives (≤3 s) | **Built** | Code complete; needs bot token/chat ID + timing test (Epic 4) |
+| US-004 | Usher Lead | Instant Telegram alert when a VIP arrives (≤3 s) | **Built — partly verified** | Alerts do arrive in the VIP group (screenshot, 3 alerts). Live text is the *old* template; **≤3 s never timed**; new code (spec template, retry, timing log) awaits a real redeploy |
 | US-005 | Attendee | See my arrival acknowledged on the projector wall | **Built** | `display.html` verified with mocked data; not run on a real projector |
 | US-006 | Entrance Usher | Scanner keeps working when cellular drops | **Done** | Offline queue + roster-cached VIP ID confirmed on device |
 | US-007 | Entrance Usher | Scan late arrivals until 09:00 PM | **Built** | No lockout in code; cut-off is administrative only; unverified end-to-end |
@@ -32,7 +32,7 @@ the Epic/Story/Task detail and the QA gates are in [`sprint-backlog.md`](./sprin
 | 3.3 | Manual PIN fallback | **Done** | |
 | 3.4 | Offline resilience | **Done** | Airplane-mode test passed |
 | 3.5 | Cross-device pass (iOS + Android) | **Deferred** | Android only so far; iOS waived for Gate 2 by the user, owed before Gate 5 |
-| 4.1 | Wire the live alert | **Built — not closed** | Code is done (4.1.2/4.1.3). 4.1.1 (bot + Script Properties) and 4.1.4 (alert timing) are yours and unverified; the live server still runs the old `Code.gs`, so the current code isn't deployed |
+| 4.1 | Wire the live alert | **Built — not closed** (4.1.1 ✅, 4.1.2 ✅, 4.1.3 ⚠ old template live, 4.1.4 ⏳) | Code is done (4.1.2/4.1.3). 4.1.1 (bot + Script Properties) and 4.1.4 (alert timing) are yours and unverified; the live server still runs the old `Code.gs`, so the current code isn't deployed |
 | 5.1 | Build the wall | **Built** | One card per person, survives refresh, loading state (BUG-010/011) |
 | 5.2 | Stability & display testing | **Not started** | 30-min soak and real 1080p/4K pending |
 | 6.1 | Staging setup | **Built (tooling)** | `auditRoster()` and `resetTestCheckins()` added; populating the real roster is user-side |
@@ -61,3 +61,6 @@ QA gates: **1 passed** · **2 passed with waiver** (iOS deferred by the user; se
 | US-B11 | As an usher, I want every result card to say which pass it's about and to see when a check is still in progress, so a late card is never a mystery. | BUG-009 | **Built** — pass code on cards, "Checking…" chip, 8 s timeouts |
 | US-B12 | As an attendee, I want to appear on the projector wall once, even if I'm checked in again during testing. | BUG-010 | **Fixed (retest)** |
 | US-B13 | As the Secretariat, I want the wall to survive a browser refresh without going blank or losing arrivals. | BUG-011 | **Fixed (retest)** |
+| US-B14 | As an usher lead, I want the VIP alert to say the seat isn't assigned yet instead of "Table 0", and to flag scans that were queued offline, so an escort isn't misled. | BUG-013 | **Built** (needs redeploy) |
+| US-B15 | As the project lead, I want a report of how long the last 20 VIP alerts took (and whether any failed), so I can prove the 3 s target. | Story 4.1.4 | **Built** — `vipAlertReport()` (needs redeploy) |
+| US-B16 | As the Secretariat, I want a failed Telegram send retried once (and never allowed to block a check-in), so a transient error doesn't lose a VIP alert. | Epic 4 | **Built** (needs redeploy) |

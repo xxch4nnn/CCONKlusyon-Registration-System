@@ -32,7 +32,9 @@ is only the top-level status snapshot.
 
 ## Do next (user-side — nothing here can be done from a Claude session)
 
-0. **URGENT — the live server is still the OLD `Code.gs`** (`?action=ping` → "Unknown action." on 2026-09-19). Until it is redeployed the scanner's GET retry
+0. **URGENT — re-check the redeploy.** You said you redeployed, but `<exec URL>?action=ping` still returned "Unknown action." on 2026-09-20 00:30 (details and the exact steps in
+   `docs/audit-2026-09-20.md`). Full task-by-task status of the sprint backlog is in that file too.
+0. **(older note) the live server is still the OLD `Code.gs`** (`?action=ping` → "Unknown action." on 2026-09-19). Until it is redeployed the scanner's GET retry
    and lost-reply recovery can't work and "unconfirmed" cards keep appearing. Then, after a bad run, **Settings → Connection log → Copy** and send it.
 0. **Redeploy `Code.gs`** (adds `auditRoster`, `resetTestCheckins`, GET check-in, `ping`), then run `auditRoster` in the editor and
    fix any ERRORS. Then follow `docs/beta-runbook.md` (Epic 6) once Telegram is provisioned.

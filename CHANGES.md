@@ -5,6 +5,18 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-20 — Sprint-backlog audit; Epic 4 hardening (retry, timing log, seat 0, delayed-scan marker)
+**By:** user (Telegram works; says Code.gs redeployed; nothing device-tested yet) + Claude
+**Audit ([`docs/audit-2026-09-20.md`](../docs/audit-2026-09-20.md)):** read-only probes show the **new `Code.gs` is not live** (`?action=ping` → Unknown action), so the alerts in the
+Telegram screenshot use the old template; GitHub Pages is current; the sheet has 10 rows with `table_allocation` = 0 everywhere and no VIP photos. QA Gate 3 is **not passed**
+(blockers: real redeploy, timed VIP alert, wall latency). Epic 4: 4.1.1 ✅, 4.1.2 ✅, 4.1.3 ⚠, 4.1.4 ⏳.
+**Epic 4 (`Code.gs`, test-first — 20 checks failed before, 63/63 pass now):** alert text built by `buildVipAlertText_` to the spec template ("Not yet assigned" for seat 0/blank; no empty
+`()`; queued-offline scans marked); `notifyVipTelegram_` retries once (5xx, network error, 429 honouring `retry_after` ≤ 2 s; no retry on 4xx) and returns `{ok, attempts, ms, delaySec}`; a
+never-throws guarantee so Telegram trouble can't fail a check-in; last 20 alert timings kept in Script property `VIP_ALERT_LOG` (no names) and summarised by `vipAlertReport()`; sync-path
+alerts are marked delayed; `auditRoster` warns on seat 0.
+**Scanner + wall:** unassigned seat (0/blank) no longer shows "Table/Seat: 0" / a seat pill (tests L6, W10). Suite: Apps Script 63, scanner 119, fresh-install 42, wall 18.
+**Needs you:** a real redeploy (verify with `?action=ping`), then run `testVipAlertTemplate`, check in a VIP test row, run `vipAlertReport`.
+
 ## 2026-09-19 — Station gate, scan-only-inside-frame, card attribution, wall fixes (audit-first)
 **By:** user (device reports) + Claude
 **Reports:** station-name prompt missing on first run and not mandatory; a QR outside the scan box still scanned; a "duplicate" with no first card, 10/10 pop-ups, a

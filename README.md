@@ -19,6 +19,7 @@ decision log (why things are the way they are).
 | `HANDOFF.md` | Current status snapshot — what's built, what's next, open items | — |
 | `docs/mvp-spec.md` | Original MVP spec (client + technical), with deviations noted at the top | — |
 | `docs/sprint-backlog.md` | Epic / Story / Task backlog and the 5 QA gates | — |
+| `docs/audit-2026-09-20.md` | Task-by-task audit of the sprint backlog with the evidence for each state | — |
 | `docs/beta-runbook.md` | The 7-test beta battery with steps, pass criteria and evidence | — |
 | `docs/bug-log.md` | Bug log and QA gate status | — |
 | `docs/user-stories.md` | Status of every user story | — |

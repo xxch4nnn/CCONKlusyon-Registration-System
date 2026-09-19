@@ -117,6 +117,19 @@ untested — including the new full-screen camera layout, the vibration fallback
 - **Fix:** the wall keeps its last state in the tab's session storage and repaints it instantly after a refresh, then reconciles with the sheet; before the first answer an empty
   wall says **"Loading arrivals…"**, not "Welcome". **Status:** **Fixed (needs device retest).** (Session storage is cleared when the tab closes.)
 
+### BUG-012 — Redeployed `Code.gs` is not what the live URL is running
+- **Reported/found:** you said you redeployed; a read-only probe of the scanner's `/exec` URL still answers `Unknown action.` to `?action=ping` and `?action=checkin`
+  (the new script answers `pong` / "Missing attendance_code"). The VIP alerts in your Telegram screenshot also still use the old template.
+- **Likely causes:** "+ New deployment" (a *different* URL that the scanner/wall don't use), or the pasted file wasn't saved, or the wrong project was edited.
+- **Impact:** GET retry, lost-reply recovery, the alert timing log, `auditRoster`, `resetTestCheckins`, `checked_in_by`, and the spec-correct alert text are all undeployed —
+  and BUG-005 ("Unknown action." / unconfirmed cards) cannot improve until this is fixed.
+- **Check:** open `<exec URL>?action=ping` — it must return `pong` (steps in `docs/audit-2026-09-20.md`). **Status:** **Open — needs you.**
+
+### BUG-013 — VIP alert said "Table: 0"; unassigned seats shown as "Table/Seat: 0"
+- **Found:** your Telegram screenshot + a sheet audit: `table_allocation` is `0` on all 10 rows (the sheet's placeholder for "not assigned").
+- **Fix (Epic 4, test-first):** the alert says **"Assigned Seat: Not yet assigned"** for 0/blank; scanner cards and the wall no longer show a seat pill for 0/blank;
+  `auditRoster` now warns on `0`. The real fix for the data is assigning seats (Epic 6.1.2). Tests E2, E15, L6, W10. **Status:** **Fixed (code) — the alert part needs the redeploy.**
+
 ## Open verification items
 iOS Safari + Android Chrome pass (Story 3.5 — waived for Gate 2, owed before Gate 5); noisy-room audibility (3.2.3);
 Telegram alert timing (4.1.4); projector wall on real 1080p/4K + 30-min soak (5.2.2/5.2.3); device retest of BUG-002/003/004/007/008/009/010/011;
