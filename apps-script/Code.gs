@@ -356,6 +356,155 @@ function testVipAlertTemplate() {
   console.log((sent ? 'Sent' : 'NOT sent (check Script Properties / logs)') + ' in ' + (Date.now() - t0) + ' ms');
 }
 
+/* ------------------------------------------------------------------------------------------------
+ * Pre-flight tooling for Epic 6 (beta staging) and Epic 7 (production lockdown).
+ * Both are run by hand from the Apps Script editor (no trailing underscore => visible in the Run menu).
+ * ---------------------------------------------------------------------------------------------- */
+
+const TICKET_TYPES = ['VIP Pass', 'Regular Attendee'];
+const CODE_RE = /^[1-9]\d{4}$/; // 5 digits, 10000-99999 (spec)
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const QR_URL_PREFIX = 'https://api.qrserver.com/v1/create-qr-code/?size=180x180&data=';
+const MAX_TEST_RESET = 30;
+
+/**
+ * Stories 6.1.1 / 7.1.1 — READ-ONLY data audit of Master_Attendance. Checks that every PIN is a unique,
+ * hard-coded 5-digit number, that no live formulas remain, and that each row is complete enough to email and
+ * seat. Results go to the execution log (row numbers and field names only — no names or emails are printed).
+ * "READY" means zero errors; warnings are worth reading but don't block.
+ */
+function auditRoster() {
+  const range = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME).getDataRange();
+  const report = auditRosterRows_(range.getValues(), range.getFormulas());
+  formatAudit_(report).forEach(function (line) { console.log(line); });
+  return report;
+}
+
+/** Pure function over the sheet's values/formulas (2D arrays, header in row 1) so it can be unit-tested. */
+function auditRosterRows_(values, formulas) {
+  const errors = [], warnings = [];
+  const add = function (list, row, field, message) { list.push({ row: row, field: field, message: message }); };
+  const summary = { rows: 0, vip: 0, regular: 0, checkedIn: 0, pending: 0, formulas: 0 };
+  const seenCodes = {}, seenEmails = {}, seenNames = {};
+  const cell = function (row, col) { return String(row[col - 1] == null ? '' : row[col - 1]).trim(); };
+
+  for (let r = 1; r < values.length; r++) {
+    const row = values[r];
+    const rowNum = r + 1;
+
+    // Live formulas anywhere in the data area (=RANDARRAY(...) etc. would re-roll PINs on every open).
+    for (let c = 0; c < row.length; c++) {
+      const f = formulas && formulas[r] && formulas[r][c];
+      if (f && String(f).charAt(0) === '=') { summary.formulas++; add(errors, rowNum, 'column ' + (c + 1), 'live formula — replace with a fixed value'); }
+    }
+
+    const used = [COL.EMAIL, COL.FULL_NAME, COL.ATTENDANCE_CODE].some(function (c) { return cell(row, c) !== ''; });
+    if (!used) continue; // blank row
+    summary.rows++;
+
+    const name = cell(row, COL.FULL_NAME);
+    if (!name) add(errors, rowNum, 'full_name', 'blank');
+    else if (seenNames[name.toLowerCase()]) add(warnings, rowNum, 'full_name', 'same name as row ' + seenNames[name.toLowerCase()]);
+    else seenNames[name.toLowerCase()] = rowNum;
+
+    const code = cell(row, COL.ATTENDANCE_CODE);
+    if (!code) add(errors, rowNum, 'attendance_code', 'blank — run generateCredentials()');
+    else if (!CODE_RE.test(code)) add(errors, rowNum, 'attendance_code', 'not a 5-digit code (10000-99999)');
+    else if (seenCodes[code]) add(errors, rowNum, 'attendance_code', 'duplicate of row ' + seenCodes[code]);
+    else seenCodes[code] = rowNum;
+
+    const ticket = cell(row, COL.TICKET_TYPE);
+    if (TICKET_TYPES.indexOf(ticket) < 0) add(errors, rowNum, 'ticket_type', 'must be "VIP Pass" or "Regular Attendee"');
+    else if (ticket === 'VIP Pass') summary.vip++;
+    else summary.regular++;
+
+    const email = cell(row, COL.EMAIL);
+    if (!email) add(errors, rowNum, 'email', 'blank');
+    else if (!EMAIL_RE.test(email)) add(errors, rowNum, 'email', 'not a valid address');
+    else if (seenEmails[email.toLowerCase()]) add(warnings, rowNum, 'email', 'same address as row ' + seenEmails[email.toLowerCase()]);
+    else seenEmails[email.toLowerCase()] = rowNum;
+
+    const qr = cell(row, COL.QR_URL);
+    if (!qr) add(errors, rowNum, 'qr_code_url', 'blank — run generateCredentials()');
+    else if (code && qr.indexOf('data=' + code) < 0) add(errors, rowNum, 'qr_code_url', 'does not encode this row\'s attendance_code');
+
+    const status = cell(row, COL.CHECKIN_STATUS);
+    if (['', 'Pending', 'Checked-In'].indexOf(status) < 0) add(errors, rowNum, 'checkin_status', 'must be blank, "Pending" or "Checked-In"');
+    if (status === 'Checked-In') summary.checkedIn++; else summary.pending++;
+    if (status !== 'Checked-In' && (cell(row, COL.CHECKIN_TS) || cell(row, COL.CHECKED_IN_BY))) {
+      add(warnings, rowNum, 'checkin_timestamp/checked_in_by', 'filled although status is not Checked-In');
+    }
+
+    if (!cell(row, COL.TABLE_ALLOC)) add(warnings, rowNum, 'table_allocation', 'blank');
+    if (!cell(row, COL.DESIGNATION)) add(warnings, rowNum, 'designation', 'blank');
+    if (!cell(row, COL.CLUB_NAME)) add(warnings, rowNum, 'club_name', 'blank');
+    const photo = cell(row, COL.PHOTO_URL);
+    if (ticket === 'VIP Pass' && !photo) add(warnings, rowNum, 'photo_url', 'VIP has no photo (wall will show a monogram)');
+    if (photo && !/^https?:\/\//i.test(photo)) add(warnings, rowNum, 'photo_url', 'not an http(s) URL');
+    if (ticket === 'Regular Attendee' && !cell(row, COL.ORG_CLASS)) add(warnings, rowNum, 'org_classification', 'blank for a Regular Attendee');
+  }
+
+  if (summary.checkedIn > 0) {
+    add(warnings, 0, 'checkin_status', summary.checkedIn + ' row(s) are already Checked-In — reset before go-live (see resetTestCheckins)');
+  }
+  return { ready: errors.length === 0, summary: summary, errors: errors, warnings: warnings };
+}
+
+function formatAudit_(report) {
+  const lines = [];
+  const s = report.summary;
+  lines.push('ROSTER AUDIT — ' + s.rows + ' rows (' + s.vip + ' VIP, ' + s.regular + ' Regular); ' +
+    s.checkedIn + ' checked in, ' + s.pending + ' pending; ' + s.formulas + ' live formula cell(s)');
+  const dump = function (title, list) {
+    lines.push(title + ' (' + list.length + ')');
+    list.slice(0, 50).forEach(function (x) { lines.push('  ' + (x.row ? 'row ' + x.row + ' · ' : '') + x.field + ': ' + x.message); });
+    if (list.length > 50) lines.push('  … ' + (list.length - 50) + ' more');
+  };
+  if (report.errors.length) dump('ERRORS — fix before go-live', report.errors);
+  if (report.warnings.length) dump('Warnings', report.warnings);
+  lines.push(report.ready ? 'RESULT: READY (no errors)' : 'RESULT: NOT READY — ' + report.errors.length + ' error(s)');
+  return lines;
+}
+
+/**
+ * Story 6.3 helper — puts specific rows back to Pending so a beta test can be repeated. Deliberately narrow:
+ * it only touches the codes listed in the Script property TEST_RESET_CODES (comma-separated, max 30), refuses
+ * anything that isn't a valid code, and does nothing if the property is unset. Never run it against real
+ * attendees during the event.
+ */
+function resetTestCheckins() {
+  const raw = PropertiesService.getScriptProperties().getProperty('TEST_RESET_CODES');
+  const codes = String(raw || '').split(',').map(function (c) { return c.trim(); }).filter(Boolean);
+  if (!codes.length) { console.log('Set the Script property TEST_RESET_CODES (e.g. 48201,48202) first. Nothing changed.'); return { reset: 0 }; }
+  const bad = codes.filter(function (c) { return !CODE_RE.test(c); });
+  if (bad.length) { console.log('Refusing: not valid 5-digit codes: ' + bad.join(', ') + '. Nothing changed.'); return { reset: 0 }; }
+  if (codes.length > MAX_TEST_RESET) { console.log('Refusing: ' + codes.length + ' codes listed, max is ' + MAX_TEST_RESET + '. Nothing changed.'); return { reset: 0 }; }
+
+  const lock = LockService.getScriptLock();
+  lock.waitLock(10000);
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    const data = sheet.getDataRange().getValues();
+    const wanted = {};
+    codes.forEach(function (c) { wanted[c] = true; });
+    let reset = 0;
+    for (let r = 1; r < data.length; r++) {
+      const code = String(data[r][COL.ATTENDANCE_CODE - 1]).trim();
+      if (!wanted[code]) continue;
+      sheet.getRange(r + 1, COL.CHECKIN_STATUS).setValue('Pending');
+      sheet.getRange(r + 1, COL.CHECKIN_TS).setValue('');
+      sheet.getRange(r + 1, COL.CHECKED_IN_BY).setValue('');
+      delete wanted[code];
+      reset++;
+    }
+    const missing = Object.keys(wanted);
+    console.log('Reset ' + reset + ' row(s) to Pending.' + (missing.length ? ' Not found: ' + missing.join(', ') : ''));
+    return { reset: reset, notFound: missing };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function jsonOut_(obj) {
   return ContentService.createTextOutput(JSON.stringify(obj)).setMimeType(ContentService.MimeType.JSON);
 }

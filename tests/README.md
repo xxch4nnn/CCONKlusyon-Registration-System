@@ -53,3 +53,21 @@ then scan/enter a test code; repeat ~10 times (reset rows afterwards). Then:
 2. Apps Script editor → **Executions**: a failing scan that ran `doGet` with `action=undefined` (or a `doPost`
    with `bodyLen=0`) confirms the request was downgraded.
 3. The usher should never see the words "Unknown action" — only a result card or the "saved, will sync" card.
+
+## Automated suite (run this before every push)
+
+```
+node tests/run.js                 # everything
+node tests/run.js --only decode   # scanner case files whose name contains "decode"
+node tests/run.js --scanner some.html   # run the scanner cases against another copy
+```
+
+Needs Node and an installed Edge or Chrome (`BROWSER=<path>` to override). No npm packages.
+
+- `tests/code-gs.test.js` — `Code.gs` against mocked Apps Script globals: routing, GET/POST check-in, sync, duplicate
+  handling, ping, `auditRoster`, `resetTestCheckins`.
+- `tests/scanner/` — `scanner.html` in a headless browser against a scripted fake server (virtual time, so a 60 s idle test
+  runs in seconds). `cases/decode-guard.js` (BUG-003/004, includes the hard-coded pass-code accept/reject corpus),
+  `cases/scan-guard.js` (BUG-001/002), `cases/retry-sync.js` (BUG-005 / offline queue / sync).
+- The runner fails if a case file doesn't load, so a syntax error can't silently skip tests. When fixing a bug,
+  add the failing case first, watch it fail, then fix.

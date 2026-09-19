@@ -32,6 +32,9 @@ is only the top-level status snapshot.
 
 ## Do next (user-side — nothing here can be done from a Claude session)
 
+0. **Redeploy `Code.gs`** (adds `auditRoster`, `resetTestCheckins`, GET check-in, `ping`), then run `auditRoster` in the editor and
+   fix any ERRORS. Then follow `docs/beta-runbook.md` (Epic 6) once Telegram is provisioned.
+
 1. **Redeploy `Code.gs`**: paste `apps-script/Code.gs` into the Apps Script project, then
    **Deploy → Manage deployments → pencil/edit → Version: New version → Deploy**. (Never "+ New
    deployment" — it mints a new URL and strands `scanner.html`/`display.html`. See `AGENTS.md`.)
@@ -48,10 +51,9 @@ is only the top-level status snapshot.
 
 ## Open items
 
-- **QA Gate 2 is NOT passed** — see `docs/bug-log.md` for the box-by-box status and BUG-001…006, and
-  `docs/user-stories.md` for every story's state. BUG-003/004 (phantom scanner pop-ups) are logged, not fixed;
-  they're the recommended next change once you give the go-ahead.
-
+- **QA Gate 2: passed with waiver** — iOS Safari pass deferred by the user (owed before Gate 5). BUG-001 verified on device;
+  BUG-003/004 fixed test-first but **need a phone retest** (empty space / posters for a few minutes → nothing should pop up).
+  See `docs/bug-log.md` and `docs/user-stories.md`. Run `node tests/run.js` before any push.
 - **"Unknown action." on the first scan — mitigated, root cause unproven.** Hardening + a Connection log
   shipped (see the Sept 19 `CHANGES.md` entry). Needs: redeploy `Code.gs`, then the 10-scan trial in
   `tests/README.md`. If the log confirms a POST→GET downgrade, flip check-in to GET-primary.

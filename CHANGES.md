@@ -5,6 +5,26 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-19 — BUG-001 verified; BUG-003/004 fixed test-first; Gate 2 passed with waiver; Epic 6/7 tooling
+**By:** user (device result + go-ahead) + Claude
+**Gate:** BUG-001 confirmed fixed on device. The user can't do the iOS pass right now, so **QA Gate 2 is recorded as passed
+with a waiver** (iOS Safari deferred, owed before Gate 5) and development proceeds. Latency ≤ 3 s carried to Gate 5 / beta 6.2.2.
+**BUG-003/004 (phantom pop-ups / alerts) — audit first:** built a committed, dependency-free test suite
+(`tests/run.js`: Apps Script mocks in Node + `scanner.html` in headless Edge/Chrome against a scripted fake server, hard-coded
+accept/reject corpus for pass codes). Run against the unfixed scanner: **14 of 57 checks failed** — any decoded text (noise, a
+non-pass QR, a lone frame, flicker between codes) was submitted as a check-in and noise even delayed a real scan. The same
+suite proved app timers and background sync are *not* the cause (idle-60 s and queued-sync tests passed).
+**Fix:** `parsePassCode()` (10000–99999, optional `CCO-`), a stability gate (same decode 2× within 1.2 s), and a quiet
+"Not a CCOnklusyon pass" hint + Connection-log line for stable non-pass QRs. Result: **101/101 scanner checks and 36/36 Apps Script
+checks pass.** Trade-off: ~one extra camera frame before a pass registers. **Not yet retested on a phone.**
+**Also found while building the suite:** a literal `</script>` inside a test string silently skipped a whole case file — the runner
+now fails if any case file doesn't load.
+**Epic 6/7 tooling (`Code.gs`, built test-first):** `auditRoster()` — read-only pre-flight audit (unique fixed 5-digit PINs, no live
+formulas, valid ticket types/emails/QR URLs, completeness warnings; prints row numbers and field names only, no PII);
+`resetTestCheckins()` — resets only the codes listed in Script property `TEST_RESET_CODES` (max 30, refuses malformed input).
+**Docs:** `docs/beta-runbook.md` (the 7-test battery with steps, pass criteria and evidence), bug log / user stories / backlog updated.
+**Needs:** redeploy `Code.gs` (new functions), then run `auditRoster`.
+
 ## 2026-09-19 — Device bug report logged; QA Gate 2 assessed (not passed); duplicate-scan bug fixed
 **By:** user (device testing) + Claude
 **Reported:** false "already checked in" card right after a good scan; scanning continuing while a card is

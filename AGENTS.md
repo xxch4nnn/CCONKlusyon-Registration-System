@@ -99,13 +99,17 @@ apps-script/
 docs/
   mvp-spec.md           original MVP spec (Sept 13 snapshot; deviations noted at the top)
   sprint-backlog.md     Epic/Story/Task backlog + the 5 QA gates
+  beta-runbook.md       Epic 6 battery: steps, pass criteria, evidence, triage log
   bug-log.md            bugs + QA gate status (gate-explicit bugs block; others are logged here)
   user-stories.md       status of every user story / backlog story
   api-contract.md       endpoint request/response shapes
   db-schema.md          Master_Attendance columns A-M
   private/              gitignored, local only: PM dossier + SDLC stages 1-3 (name real people)
 tests/
-  README.md             curl contract checks
+  run.js                dependency-free test runner (Node + headless Edge/Chrome)
+  code-gs.test.js       Code.gs against mocked Apps Script
+  scanner/              scanner.html harness + cases (decode / scan guards / retry-sync)
+  README.md             how to run the suite + manual curl/device checks
 ```
 The frontend HTML files stay at the repo root so GitHub Pages serves them without extra
 configuration. The repo is **public**: never commit attendee names, emails, or roster data — the
