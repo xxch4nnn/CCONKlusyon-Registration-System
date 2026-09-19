@@ -2,7 +2,8 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#0B0E14">
 <title>CCOnklusyon Usher Scanner</title>
 <!--
   CCOnklusyon Registration & Check-in System — Usher Scanner PWA (D-2)
@@ -16,6 +17,10 @@
                                                              for offline VIP identification
   html5-qrcode loaded from jsdelivr per Story 3.1.1 (spec explicitly calls for "via CDN").
 
+  Layout: a fixed-height (100dvh) app shell — top bar, camera viewport that takes whatever height is
+  left, and a bottom dock. Nothing sits below the fold, so every control is always reachable
+  regardless of phone size or browser toolbars.
+
   Before using: set CONFIG.API_BASE below to the live /exec URL (same one Code.gs was
   contract-tested against). Uses the browser's own fetch() redirect handling, which already
   does what the manual curl workaround used during Epic 1 testing did (follow the /exec ->
@@ -24,149 +29,274 @@
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
   :root {
-    --gold: #B8860B; --gold-tint: #FFFDF0;
-    --blue: #1A56DB; --blue-tint: #F0F5FF;
+    --gold: #B8860B; --blue: #1A56DB;
     --green: #16A34A; --amber: #D97706; --red: #DC2626;
-    --bg: #0B0E14; --panel: #151A24; --text: #F3F4F6; --muted: #9CA3AF;
+    --bg: #0B0E14; --panel: #151A24; --panel-2: #1D2431; --line: #2A3142;
+    --text: #F3F4F6; --muted: #9CA3AF;
+    --ease: cubic-bezier(.22,.61,.36,1);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html { overflow-x: hidden; width: 100%; }
-  html, body { height: 100%; margin: 0; overscroll-behavior: none; }
+  html, body { height: 100%; margin: 0; overscroll-behavior: none; background: var(--bg); }
   body {
-    background: var(--bg); color: var(--text);
+    color: var(--text); overflow: hidden;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-    display: flex; flex-direction: column; min-height: 100vh;
-    width: 100%; overflow-x: hidden;
   }
-  header {
-    display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 4px 10px;
-    padding: 10px 14px; background: var(--panel); border-bottom: 1px solid #232938;
-    font-size: 12px; color: var(--muted);
-  }
-  header b { color: var(--text); }
-  header button.linklike {
-    background: none; border: 1px solid #374151; color: var(--text); font-size: 11px;
-    font-weight: 600; padding: 4px 8px; border-radius: 6px; width: auto; flex: 0 0 auto;
-  }
-  header button.linklike:disabled { opacity: 0.5; }
-  #offlineBanner {
-    background: var(--amber); color: #1A1200; font-weight: 700; text-align: center;
-    padding: 8px 10px; font-size: 14px; letter-spacing: 0.3px;
-  }
-  /* Camera preview: html5-qrcode sets pixel dimensions on the injected <video>/<canvas> that
-     can exceed the container on some devices — force them back to 100% width (Story 3.1 UI fix). */
-  #reader { width: 100%; max-width: 480px; margin: 12px auto 0; border-radius: 12px; overflow: hidden; }
-  #reader video, #reader canvas, #reader img {
-    width: 100% !important; height: auto !important; max-width: 100%; border-radius: 12px; display: block;
-  }
-  main { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 0 14px 14px; width: 100%; }
-  .controls {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 10px; width: 100%; max-width: 480px; margin-top: 14px;
-  }
-  button {
-    font: inherit; font-weight: 700; border: none; border-radius: 10px; padding: 14px 10px;
-    font-size: 14px; cursor: pointer; color: #fff; width: 100%;
-  }
-  #torchBtn, #cameraToggleBtn { background: #374151; }
-  #manualBtn { background: #374151; }
-  #manualPanel {
-    width: 100%; max-width: 480px; margin-top: 14px; background: var(--panel);
-    border-radius: 12px; padding: 16px; display: flex; gap: 10px;
-  }
-  #manualCode {
-    flex: 1; font-size: 20px; letter-spacing: 3px; padding: 12px; border-radius: 8px;
-    border: 1px solid #374151; background: #0B0E14; color: var(--text); text-align: center;
-  }
-  #manualSubmit { background: var(--blue); flex: 0 0 auto; }
-  #queueNote { font-size: 12px; color: var(--muted); margin-top: 8px; text-align: center; }
-  #continuousLabel {
-    display: flex; align-items: center; gap: 8px; width: 100%; max-width: 480px; margin-top: 12px;
-    font-size: 13px; color: var(--muted); padding: 10px 12px; background: var(--panel); border-radius: 10px;
-  }
-  #continuousLabel input { width: 18px; height: 18px; flex: 0 0 auto; }
-  #readerPaused {
-    width: 100%; max-width: 480px; margin: 12px auto 0; border-radius: 12px; padding: 40px 20px;
-    background: var(--panel); border: 1px dashed #374151; text-align: center; color: var(--muted); font-size: 14px;
-  }
-
-  /* Full-screen state flash (Story 3.2.2) — soft radial pulse, not a hard strobe */
-  #flash {
-    position: fixed; inset: 0; opacity: 0; pointer-events: none; z-index: 30;
-    transition: opacity 420ms cubic-bezier(.22,.61,.36,1);
-  }
-  #flash.show { opacity: 0.55; transition-duration: 160ms; }
-  #flash.green { background: radial-gradient(circle at 50% 40%, var(--green), transparent 72%); }
-  #flash.amber { background: radial-gradient(circle at 50% 40%, var(--amber), transparent 72%); }
-  #flash.red   { background: radial-gradient(circle at 50% 40%, var(--red), transparent 72%); }
-
-  /* Result modal (Story 3.3.2 / feedback layer) */
-  #resultModal {
-    position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
-    background: rgba(0,0,0,0.55); padding: 20px;
-  }
-  #resultModal[hidden] { display: none; }
-  .card {
-    width: 100%; max-width: 420px; background: #fff; color: #111827; border-radius: 16px;
-    overflow: hidden; text-align: center; animation: cardIn 220ms cubic-bezier(.22,.61,.36,1);
-  }
-  @keyframes cardIn { from { opacity: 0; transform: translateY(10px) scale(.97); } to { opacity: 1; transform: none; } }
-  .card.duplicate { animation: cardIn 220ms cubic-bezier(.22,.61,.36,1), dupPulse 900ms ease-in-out 1; border: 3px solid var(--amber); }
-  @keyframes dupPulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(217,119,6,0.0); }
-    30% { box-shadow: 0 0 0 10px rgba(217,119,6,0.35); }
-    60% { box-shadow: 0 0 0 0 rgba(217,119,6,0.0); }
-  }
-  .card .tier-bar { padding: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
-    font-size: 13px; color: #fff; }
-  .card .tier-bar.duplicate-bar { background: var(--amber) !important; }
-  .card .body { padding: 22px 20px 26px; }
-  .card .warn-icon { font-size: 30px; line-height: 1; margin-bottom: 4px; }
-  .card .name { font-size: 22px; font-weight: 800; margin: 0 0 4px; }
-  .card .sub { font-size: 14px; color: #4B5563; margin: 0 0 14px; }
-  .card .seat { display: inline-block; padding: 6px 16px; border-radius: 20px; background: #F3F4F6;
-    font-size: 13px; font-weight: 700; color: #111827; }
-  .card .msg { font-size: 16px; font-weight: 800; margin: 0 0 6px; }
-  .card .first-seen { display: inline-block; margin-top: 12px; padding: 6px 14px; border-radius: 20px;
-    background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; }
-  .card .offline-note { display: block; margin-top: 14px; font-size: 12px; color: #92400E;
-    background: #FEF3C7; border-radius: 8px; padding: 8px 10px; }
-  .card.error .body { padding-top: 26px; }
-  .card button.close { margin: 0; width: calc(100% - 40px); margin: 0 20px 20px; background: #111827; }
   [hidden] { display: none !important; }
+  button { font: inherit; color: inherit; border: none; cursor: pointer; }
+
+  /* ---- App shell: header / camera (flex:1) / dock. No page scroll, nothing below the fold. ---- */
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; width: 100%; }
+
+  #offlineBanner {
+    flex: 0 0 auto; background: var(--amber); color: #1A1200; font-weight: 700; text-align: center;
+    padding: calc(6px + env(safe-area-inset-top)) 10px 6px; font-size: 12px; letter-spacing: .2px;
+  }
+  #topbar {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 8px; min-height: 46px;
+    padding: 6px 10px 6px 12px; padding-top: calc(6px + env(safe-area-inset-top));
+    background: var(--panel); border-bottom: 1px solid var(--line); font-size: 12px;
+  }
+  #offlineBanner:not([hidden]) + #topbar { padding-top: 6px; }
+  .station { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 auto; font-weight: 700; }
+  .station b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: 0 0 auto;
+    box-shadow: 0 0 0 0 rgba(22,163,74,.6); animation: dotPulse 2.4s ease-out infinite; }
+  .dot.warn { background: var(--amber); box-shadow: 0 0 0 0 rgba(217,119,6,.6); }
+  @keyframes dotPulse { 70% { box-shadow: 0 0 0 7px rgba(22,163,74,0); } 100% { box-shadow: 0 0 0 0 rgba(22,163,74,0); } }
+  .dot.warn { animation-name: dotPulseWarn; }
+  @keyframes dotPulseWarn { 70% { box-shadow: 0 0 0 7px rgba(217,119,6,0); } 100% { box-shadow: 0 0 0 0 rgba(217,119,6,0); } }
+  .pill {
+    flex: 0 0 auto; padding: 4px 9px; border-radius: 999px; background: var(--panel-2);
+    color: var(--muted); font-weight: 600; font-size: 11px; white-space: nowrap;
+    transition: background .25s, color .25s, transform .25s var(--ease);
+  }
+  .pill.bump { transform: scale(1.18); background: var(--green); color: #fff; }
+  .pill.attn { background: var(--amber); color: #1A1200; }
+  .icon-btn { flex: 0 0 auto; width: 36px; height: 36px; border-radius: 10px; background: var(--panel-2); font-size: 17px; }
+  .icon-btn:active { transform: scale(.94); }
+
+  /* ---- Camera viewport ---- */
+  #viewport { position: relative; flex: 1 1 0; min-height: 0; overflow: hidden; background: #000; }
+  #reader { position: absolute; inset: 0; width: 100%; height: 100%; border: none !important; padding: 0 !important; }
+  /* html5-qrcode injects fixed-pixel <video>/<canvas> plus its own shaded overlay. Force the video to
+     fill the viewport (cover), hide the library chrome — we draw our own reticle below. */
+  #reader > div, #reader__scan_region { width: 100% !important; height: 100% !important; min-height: 0 !important; }
+  #reader video { width: 100% !important; height: 100% !important; object-fit: cover; display: block; }
+  #reader canvas, #reader #qr-shaded-region, #reader img { display: none !important; }
+
+  #readerPaused {
+    position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 6px; text-align: center; padding: 24px; color: var(--muted); font-size: 14px; line-height: 1.5;
+    background: radial-gradient(circle at 50% 40%, #1a2130, var(--bg) 70%);
+  }
+  #readerPaused .big { font-size: 40px; }
+
+  .reticle { position: absolute; left: 50%; top: 50%; width: min(68vw, 46dvh, 320px); aspect-ratio: 1;
+    transform: translate(-50%, -50%); pointer-events: none; }
+  .reticle .mask { position: absolute; inset: 0; border-radius: 18px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.42); }
+  .reticle i { position: absolute; width: 30px; height: 30px; border: 4px solid rgba(255,255,255,.92);
+    transition: border-color .2s, transform .25s var(--ease); }
+  .reticle i:nth-of-type(1) { top: 0; left: 0; border-right: 0; border-bottom: 0; border-top-left-radius: 18px; }
+  .reticle i:nth-of-type(2) { top: 0; right: 0; border-left: 0; border-bottom: 0; border-top-right-radius: 18px; }
+  .reticle i:nth-of-type(3) { bottom: 0; left: 0; border-right: 0; border-top: 0; border-bottom-left-radius: 18px; }
+  .reticle i:nth-of-type(4) { bottom: 0; right: 0; border-left: 0; border-top: 0; border-bottom-right-radius: 18px; }
+  .scanline { position: absolute; left: 8%; right: 8%; top: 8%; height: 2px; border-radius: 2px;
+    background: linear-gradient(90deg, transparent, #4ADE80, transparent); box-shadow: 0 0 14px #4ADE80;
+    animation: scan 1.9s ease-in-out infinite alternate; }
+  @keyframes scan { from { top: 8%; } to { top: 92%; } }
+  .reticle.ok i { border-color: var(--green); }
+  .reticle.dup i { border-color: var(--amber); }
+  .reticle.err i { border-color: var(--red); }
+  .reticle.vip i { border-color: #FBBF24; }
+  .reticle.pulse i { animation: cornerPop .55s var(--ease); }
+  @keyframes cornerPop { 40% { transform: scale(1.35); } }
+  .reticle.locked .scanline { opacity: 0; }
+
+  .viewport-chip {
+    position: absolute; left: 50%; transform: translateX(-50%); padding: 7px 14px; border-radius: 999px;
+    background: rgba(0,0,0,.6); backdrop-filter: blur(6px); font-size: 12px; font-weight: 600; white-space: nowrap;
+    max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis;
+  }
+  #hint { bottom: 14px; color: #E5E7EB; }
+  #unlockHint { top: 12px; background: rgba(217,119,6,.92); color: #1A1200; animation: nudge 1.6s ease-in-out infinite; }
+  @keyframes nudge { 50% { transform: translateX(-50%) translateY(3px); } }
+  #toast { top: 12px; background: rgba(21,26,36,.94); border: 1px solid var(--line); opacity: 0; pointer-events: none;
+    transition: opacity .25s, transform .25s var(--ease); transform: translateX(-50%) translateY(-6px); }
+  #toast.show { opacity: 1; transform: translateX(-50%); }
+  #torchBtn { position: absolute; right: 12px; bottom: 12px; width: 46px; height: 46px; border-radius: 50%;
+    background: rgba(0,0,0,.6); backdrop-filter: blur(6px); font-size: 20px; }
+  #torchBtn.on { background: #F59E0B; }
+
+  /* ---- Bottom dock: always visible, safe-area aware ---- */
+  #dock { flex: 0 0 auto; background: var(--panel); border-top: 1px solid var(--line);
+    padding: 10px 12px calc(10px + env(safe-area-inset-bottom)); display: flex; flex-direction: column; gap: 10px; }
+  .switch-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 13px;
+    color: var(--text); padding: 2px 2px; cursor: pointer; user-select: none; }
+  .switch-row small { display: block; color: var(--muted); font-size: 11px; margin-top: 1px; }
+  .switch { appearance: none; -webkit-appearance: none; flex: 0 0 auto; width: 46px; height: 28px; border-radius: 14px;
+    background: #374151; position: relative; margin: 0; cursor: pointer; transition: background .2s; outline-offset: 3px; }
+  .switch::after { content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; transition: transform .2s var(--ease); }
+  .switch:checked { background: var(--green); }
+  .switch:checked::after { transform: translateX(18px); }
+  .dock-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
+  .btn { padding: 15px 10px; border-radius: 12px; font-weight: 700; font-size: 15px; transition: transform .12s, background .2s; }
+  .btn:active { transform: scale(.97); }
+  .btn.secondary { background: #374151; }
+  .btn.primary { background: var(--blue); }
+  .btn:disabled { opacity: .55; }
+  #manualPanel { display: flex; gap: 10px; animation: rise .25s var(--ease); }
+  @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+  #manualCode { flex: 1; min-width: 0; font-size: 22px; letter-spacing: 4px; padding: 12px; border-radius: 12px;
+    border: 1px solid #374151; background: var(--bg); color: var(--text); text-align: center; }
+  #manualCode:focus { outline: 2px solid var(--blue); border-color: transparent; }
+  #manualSubmit { flex: 0 0 auto; padding: 0 20px; background: var(--blue); border-radius: 12px; font-weight: 700; }
+
+  /* Short screens (landscape phones, small devices): tighten the chrome so the camera keeps room. */
+  @media (max-height: 560px) {
+    #topbar { min-height: 40px; }
+    .btn { padding: 11px 8px; font-size: 14px; }
+    #dock { gap: 6px; padding-top: 6px; }
+    .switch-row small { display: none; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .scanline, .dot, #unlockHint { animation: none; }
+  }
+
+  /* ---- Full-screen state flash (Story 3.2.2) — soft radial pulse, not a hard strobe ---- */
+  #flash { position: fixed; inset: 0; opacity: 0; pointer-events: none; z-index: 30;
+    transition: opacity 420ms var(--ease); }
+  #flash.show { opacity: 0.6; transition-duration: 140ms; }
+  #flash.green { background: radial-gradient(circle at 50% 40%, var(--green), transparent 74%); }
+  #flash.amber { background: radial-gradient(circle at 50% 40%, var(--amber), transparent 74%); }
+  #flash.red   { background: radial-gradient(circle at 50% 40%, var(--red), transparent 74%); }
+  #flash.gold  { background: radial-gradient(circle at 50% 40%, #FBBF24, transparent 74%); }
+
+  /* ---- Result modal (Story 3.3.2 / feedback layer) ---- */
+  #resultModal { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.6); padding: 16px; animation: fadeIn .18s ease-out; }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .card { position: relative; width: 100%; max-width: 420px; max-height: calc(100dvh - 32px); overflow-y: auto;
+    background: #fff; color: #111827; border-radius: 18px; text-align: center; animation: cardIn 240ms var(--ease); }
+  @keyframes cardIn { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: none; } }
+  .card.duplicate { animation: cardIn 240ms var(--ease), dupPulse 900ms ease-in-out 1; border: 3px solid var(--amber); }
+  @keyframes dupPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,119,6,0); } 30% { box-shadow: 0 0 0 10px rgba(217,119,6,.35); } 60% { box-shadow: 0 0 0 0 rgba(217,119,6,0); } }
+  .card.vip { box-shadow: 0 0 0 3px #FBBF24, 0 0 34px rgba(184,134,11,.55); }
+  .card .tier-bar { padding: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; font-size: 13px; color: #fff; }
+  .card .tier-bar.duplicate-bar { background: var(--amber) !important; }
+  .dismiss-bar { height: 4px; background: rgba(0,0,0,.12); overflow: hidden; }
+  .dismiss-bar::after { content: ''; display: block; height: 100%; width: 100%; background: #111827;
+    transform-origin: left; animation: dismissBar linear forwards; animation-duration: inherit; }
+  @keyframes dismissBar { to { transform: scaleX(0); } }
+  .card .body { padding: 20px 18px 22px; }
+  .card .warn-icon, .card .vip-star { font-size: 30px; line-height: 1; margin-bottom: 4px; }
+  .card .name { font-size: 24px; font-weight: 800; margin: 0 0 4px; overflow-wrap: anywhere; }
+  .card .sub { font-size: 14px; color: #4B5563; margin: 0 0 14px; }
+  .card .seat { display: inline-block; padding: 7px 18px; border-radius: 20px; background: #F3F4F6; font-size: 14px; font-weight: 700; color: #111827; }
+  .card .msg { font-size: 17px; font-weight: 800; margin: 0 0 6px; }
+  .card .first-seen { display: inline-block; margin-top: 12px; padding: 6px 14px; border-radius: 20px; background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; }
+  .card .offline-note { display: block; margin-top: 14px; font-size: 12px; color: #92400E; background: #FEF3C7; border-radius: 8px; padding: 8px 10px; }
+  .card.error .body { padding-top: 26px; }
+  .card button.close { display: block; width: calc(100% - 36px); margin: 0 18px 18px; padding: 14px; border-radius: 12px; background: #111827; color: #fff; font-weight: 700; }
+
+  /* ---- Settings sheet ---- */
+  #settingsBackdrop { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.55); animation: fadeIn .18s ease-out; }
+  #settingsSheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 51; max-height: 88dvh; overflow-y: auto;
+    background: var(--panel); border-radius: 20px 20px 0 0; padding: 8px 16px calc(18px + env(safe-area-inset-bottom));
+    animation: sheetUp .28s var(--ease); max-width: 560px; margin: 0 auto; }
+  @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
+  .grab { width: 40px; height: 4px; border-radius: 2px; background: #374151; margin: 4px auto 12px; }
+  .sheet-title { font-size: 15px; font-weight: 800; margin: 0 0 8px; }
+  .setting { padding: 12px 0; border-top: 1px solid var(--line); }
+  .setting:first-of-type { border-top: none; }
+  .setting .label { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .seg button { padding: 11px 6px; border-radius: 10px; background: var(--panel-2); font-weight: 700; font-size: 13px; color: var(--muted); }
+  .seg button[aria-pressed="true"] { background: var(--blue); color: #fff; }
+  .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
+  .sheet-actions .btn { padding: 12px 8px; font-size: 13px; background: var(--panel-2); }
+  .sheet-actions .wide { grid-column: 1 / -1; }
+  .tiny { color: var(--muted); font-size: 11px; margin-top: 10px; word-break: break-all; }
 </style>
 </head>
 <body>
-  <div id="offlineBanner" hidden>OFFLINE MODE — scans are queued locally and will sync automatically</div>
-  <header>
-    <span>Station: <b id="stationLabel">—</b></span>
-    <span id="rosterBadge">Roster: not cached yet</span>
-    <span id="queueBadge">Queue: 0</span>
-    <button id="refreshRosterBtn" class="linklike">🔄 Refresh roster</button>
-    <button id="syncNowBtn" class="linklike">⏫ Sync now</button>
+<div id="app">
+  <div id="offlineBanner" hidden>OFFLINE — scans are queued locally and sync automatically</div>
+
+  <header id="topbar">
+    <div class="station"><span id="netDot" class="dot"></span><b id="stationLabel">—</b></div>
+    <span id="scanCount" class="pill" title="Check-ins from this device this session">✓ 0</span>
+    <span id="queueBadge" class="pill" title="Scans waiting to sync">Queue 0</span>
+    <span id="rosterBadge" class="pill" title="Cached roster for offline VIP identification">👥 —</span>
+    <button id="menuBtn" class="icon-btn" aria-label="Settings">⚙️</button>
   </header>
 
-  <div id="flash"></div>
-
-  <main>
+  <section id="viewport">
     <div id="reader"></div>
-    <div id="readerPaused" hidden>📷 Camera paused to save battery.<br>Tap "Turn Camera On" or use manual entry below.</div>
-    <div class="controls">
-      <button id="cameraToggleBtn">📷 Turn Camera Off</button>
-      <button id="torchBtn" hidden>🔦 Flashlight</button>
-      <button id="manualBtn">⌨️ Enter Code Manually</button>
+    <div id="readerPaused" hidden>
+      <div class="big">📷</div>
+      <div>Camera paused to save battery.<br>Tap <b>Camera on</b> or use <b>Enter code</b>.</div>
     </div>
+    <div id="reticle" class="reticle" aria-hidden="true">
+      <div class="mask"></div><i></i><i></i><i></i><i></i><span class="scanline"></span>
+    </div>
+    <div id="hint" class="viewport-chip">Point the camera at the QR code</div>
+    <div id="unlockHint" class="viewport-chip">👆 Tap once to enable sound &amp; vibration</div>
+    <div id="toast" class="viewport-chip" role="status"></div>
+    <button id="torchBtn" aria-label="Flashlight" hidden>🔦</button>
+  </section>
+
+  <footer id="dock">
     <div id="manualPanel" hidden>
-      <input id="manualCode" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="5-digit code">
+      <input id="manualCode" type="tel" inputmode="numeric" pattern="[0-9]*" maxlength="5" placeholder="5-digit code" autocomplete="off">
       <button id="manualSubmit">Validate</button>
     </div>
-    <label id="continuousLabel">
-      <input type="checkbox" id="continuousScanCheckbox">
-      Keep scanning while a result card is showing (skip the buffer)
+    <label id="continuousLabel" class="switch-row">
+      <span>Keep scanning while a result card is showing
+        <small>Skips the pause between scans — for fast lines</small></span>
+      <input type="checkbox" class="switch" role="switch" id="continuousScanCheckbox">
     </label>
-    <div id="queueNote" hidden></div>
-  </main>
+    <div class="dock-actions">
+      <button id="cameraToggleBtn" class="btn secondary">📷 Camera off</button>
+      <button id="manualBtn" class="btn primary">⌨️ Enter code</button>
+    </div>
+  </footer>
+</div>
 
-  <div id="resultModal" hidden></div>
+<div id="flash"></div>
+<div id="resultModal" hidden></div>
+
+<div id="settingsBackdrop" hidden></div>
+<div id="settingsSheet" role="dialog" aria-label="Scanner settings" hidden>
+  <div class="grab"></div>
+  <p class="sheet-title">Scanner settings</p>
+  <div class="setting">
+    <div class="label">Sound</div>
+    <div class="seg" id="volumeSeg">
+      <button data-v="off" aria-pressed="false">🔇 Off</button>
+      <button data-v="normal" aria-pressed="false">🔉 Normal</button>
+      <button data-v="loud" aria-pressed="false">🔊 Loud</button>
+    </div>
+  </div>
+  <label class="setting switch-row">
+    <span>Haptic feedback<small id="hapticNote">Vibrates on every result (Android). iPhones don't support web vibration.</small></span>
+    <input type="checkbox" class="switch" role="switch" id="hapticsToggle">
+  </label>
+  <label class="setting switch-row">
+    <span>Auto-dismiss result cards<small>Successful check-ins close themselves (VIPs stay longer)</small></span>
+    <input type="checkbox" class="switch" role="switch" id="autoDismissToggle">
+  </label>
+  <div class="setting">
+    <div class="sheet-actions">
+      <button class="btn wide" id="testFeedbackBtn">🔔 Test sound &amp; vibration</button>
+      <button class="btn" id="refreshRosterBtn">🔄 Refresh roster</button>
+      <button class="btn" id="syncNowBtn">⏫ Sync now</button>
+      <button class="btn wide" id="changeStationBtn">✏️ Change station name</button>
+      <button class="btn wide" id="closeSettingsBtn" style="background:var(--blue)">Done</button>
+    </div>
+    <div class="tiny" id="apiNote"></div>
+  </div>
+</div>
 
 <script>
 (function () {
@@ -186,26 +316,56 @@
     SCAN_FREEZE_MS: 2000,       // Story 3.1.3
     AUTO_SYNC_INTERVAL_MS: 15000,
     ROSTER_REFRESH_INTERVAL_MS: 5 * 60 * 1000, // 5 min — roster changes rarely mid-event
+    AUTO_DISMISS_MS: 2500,      // regular check-in card
+    AUTO_DISMISS_VIP_MS: 5000,  // VIP card stays longer so the usher can read it
     TIER_COLORS: {
       'VIP Pass': '#B8860B',
       'Regular Attendee': '#1A56DB'
     },
     DEVICE_ID_KEY: 'cco_device_id',
     OFFLINE_QUEUE_KEY: 'cco_offline_scans',
-    ROSTER_CACHE_KEY: 'cco_roster_cache'
+    ROSTER_CACHE_KEY: 'cco_roster_cache',
+    SETTINGS_KEY: 'cco_scanner_settings'
   };
 
+  const $ = function (id) { return document.getElementById(id); };
+
+  // ---- Settings (persisted per device) --------------------------------------------------
+  const DEFAULT_SETTINGS = { volume: 'loud', haptics: true, autoDismiss: true, continuous: false };
+  function loadSettings() {
+    try { return Object.assign({}, DEFAULT_SETTINGS, JSON.parse(localStorage.getItem(CONFIG.SETTINGS_KEY) || '{}')); }
+    catch (e) { return Object.assign({}, DEFAULT_SETTINGS); }
+  }
+  const settings = loadSettings();
+  function saveSettings() {
+    try { localStorage.setItem(CONFIG.SETTINGS_KEY, JSON.stringify(settings)); } catch (e) { /* storage blocked */ }
+  }
+
+  // ---- Small UI helpers -----------------------------------------------------------------
+  let toastTimer = null;
+  function showToast(msg, ms) {
+    const el = $('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { el.classList.remove('show'); }, ms || 2200);
+  }
+  function bump(el) {
+    el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump');
+    setTimeout(function () { el.classList.remove('bump'); }, 320);
+  }
+
   // ---- Device / station id -----------------------------------------------------------
-  function getDeviceId() {
-    let id = localStorage.getItem(CONFIG.DEVICE_ID_KEY);
-    if (!id) {
-      id = (prompt('Usher station / device name (e.g. "Entrance-1"):') || '').trim() || 'Unassigned-Station';
-      localStorage.setItem(CONFIG.DEVICE_ID_KEY, id);
-    }
+  function askStationName() {
+    const id = (prompt('Usher station / device name (e.g. "Entrance-1"):') || '').trim() || 'Unassigned-Station';
+    localStorage.setItem(CONFIG.DEVICE_ID_KEY, id);
     return id;
   }
-  const deviceId = getDeviceId();
-  document.getElementById('stationLabel').textContent = deviceId;
+  function getDeviceId() {
+    return localStorage.getItem(CONFIG.DEVICE_ID_KEY) || askStationName();
+  }
+  let deviceId = getDeviceId();
+  $('stationLabel').textContent = deviceId;
 
   // ---- Offline queue (Story 3.4) ------------------------------------------------------
   function readQueue() {
@@ -223,14 +383,18 @@
   }
   function updateQueueUi() {
     const n = readQueue().length;
-    document.getElementById('queueBadge').textContent = 'Queue: ' + n;
-    const banner = document.getElementById('offlineBanner');
-    banner.hidden = n === 0 && navigator.onLine;
+    const offline = !navigator.onLine;
+    const badge = $('queueBadge');
+    badge.textContent = 'Queue ' + n;
+    badge.classList.toggle('attn', n > 0);
+    $('offlineBanner').hidden = n === 0 && !offline;
+    $('netDot').classList.toggle('warn', offline || n > 0);
   }
 
+  // Returns the number of queued scans flushed, or null if nothing was sent.
   async function trySyncOfflineQueue() {
     const q = readQueue();
-    if (q.length === 0 || !navigator.onLine) return;
+    if (q.length === 0 || !navigator.onLine) return null;
     try {
       const res = await fetch(CONFIG.API_BASE, {
         method: 'POST',
@@ -239,13 +403,14 @@
       const json = await res.json();
       if (json && json.status === 'SUCCESS') {
         writeQueue([]); // whole batch flushed — Code.gs handleSync_ processes every item
+        return q.length;
       }
     } catch (err) {
       // still offline or endpoint unreachable — leave queue intact, retry later
     }
+    return null;
   }
-  window.addEventListener('online', trySyncOfflineQueue);
-  window.addEventListener('online', updateQueueUi);
+  window.addEventListener('online', function () { trySyncOfflineQueue(); updateQueueUi(); });
   window.addEventListener('offline', updateQueueUi);
   setInterval(trySyncOfflineQueue, CONFIG.AUTO_SYNC_INTERVAL_MS);
 
@@ -264,15 +429,17 @@
   }
   function updateRosterBadge() {
     const cache = readRosterCache();
-    const el = document.getElementById('rosterBadge');
-    if (!cache) { el.textContent = 'Roster: not cached yet'; return; }
+    const el = $('rosterBadge');
+    el.classList.remove('attn');
+    if (!cache) { el.textContent = '👥 —'; return; }
     const n = Object.keys(cache.byCode || {}).length;
     const t = new Date(cache.syncedAt);
     const hh = String(t.getHours()).padStart(2, '0'), mm = String(t.getMinutes()).padStart(2, '0');
-    el.textContent = 'Roster: ' + n + ' cached (synced ' + hh + ':' + mm + ')';
+    el.textContent = '👥 ' + n + ' · ' + hh + ':' + mm;
   }
+  // Returns 'ok' | 'unsupported' | 'offline'.
   async function fetchRoster() {
-    if (!navigator.onLine) return;
+    if (!navigator.onLine) return 'offline';
     try {
       const res = await fetch(CONFIG.API_BASE + '?action=roster');
       const json = await res.json();
@@ -283,84 +450,170 @@
         });
         localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify({ byCode: byCode, syncedAt: new Date().toISOString() }));
         updateRosterBadge();
-      } else {
-        // The deployed Apps Script doesn't recognize ?action=roster yet — most likely Code.gs
-        // was updated but not redeployed (Deploy > Manage deployments > Edit > New version).
-        // Surfaced in the badge instead of failing silently, so this is diagnosable from the
-        // phone alone instead of looking like "offline mode is just broken."
-        document.getElementById('rosterBadge').textContent = 'Roster: server doesn’t support it yet (redeploy Code.gs)';
+        return 'ok';
       }
+      // The deployed Apps Script doesn't recognize ?action=roster yet — most likely Code.gs
+      // was updated but not redeployed (Deploy > Manage deployments > Edit > New version).
+      // Surfaced in the badge instead of failing silently, so this is diagnosable from the
+      // phone alone instead of looking like "offline mode is just broken."
+      const el = $('rosterBadge');
+      el.textContent = '👥 ⚠ redeploy Code.gs';
+      el.classList.add('attn');
+      return 'unsupported';
     } catch (err) {
       // offline or endpoint unreachable — keep whatever cache is already there
+      return 'offline';
     }
   }
   window.addEventListener('online', fetchRoster);
   setInterval(fetchRoster, CONFIG.ROSTER_REFRESH_INTERVAL_MS);
 
-  // ---- Feedback layer: audio tones (Story 3.2.1) --------------------------------------
-  let audioCtx = null;
+  // ---- Feedback layer: audio (Story 3.2.1), made louder + longer ------------------------
+  // Same spec frequencies (800→1200 success, 440 duplicate, 200 error) but with a harder
+  // waveform, an octave harmonic, repeated beeps, and a compressor so it cuts through a noisy room.
+  // Web Audio needs a user gesture to start — see unlockFeedback() below.
+  let audioCtx = null, masterGain = null;
+  const VOLUME = { off: 0, normal: 0.55, loud: 1 };
   function ensureAudioCtx() {
     if (!audioCtx) {
       const Ctx = window.AudioContext || window.webkitAudioContext;
-      if (Ctx) audioCtx = new Ctx();
+      if (Ctx) {
+        audioCtx = new Ctx();
+        const comp = audioCtx.createDynamicsCompressor();
+        comp.threshold.value = -20; comp.knee.value = 12; comp.ratio.value = 10;
+        comp.attack.value = 0.003; comp.release.value = 0.12;
+        masterGain = audioCtx.createGain();
+        masterGain.connect(comp);
+        comp.connect(audioCtx.destination);
+      }
     }
     if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
     return audioCtx;
   }
-  function tone(freqStart, freqEnd, durationMs) {
-    const ctx = ensureAudioCtx();
-    if (!ctx) return;
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = 'sine';
-    osc.frequency.setValueAtTime(freqStart, ctx.currentTime);
-    if (freqEnd !== freqStart) {
-      osc.frequency.linearRampToValueAtTime(freqEnd, ctx.currentTime + durationMs / 1000);
-    }
-    gain.gain.setValueAtTime(0.25, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + durationMs / 1000);
-    osc.connect(gain).connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + durationMs / 1000);
+  // One sweep: `offset` seconds from now, freq f0→f1 over `dur` seconds, plus a quieter octave-up sine.
+  function note(offset, f0, f1, dur, type, gain) {
+    const t = audioCtx.currentTime + offset;
+    [[type, 1, gain], ['sine', 2, gain * 0.55]].forEach(function (v) {
+      const osc = audioCtx.createOscillator(), g = audioCtx.createGain();
+      osc.type = v[0];
+      osc.frequency.setValueAtTime(f0 * v[1], t);
+      if (f1 !== f0) osc.frequency.linearRampToValueAtTime(f1 * v[1], t + dur);
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(v[2], t + 0.01);
+      g.gain.setValueAtTime(v[2], t + dur * 0.7);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      osc.connect(g); g.connect(masterGain);
+      osc.start(t); osc.stop(t + dur + 0.03);
+    });
   }
   function playFeedbackTone(kind) {
-    if (kind === 'success') tone(800, 1200, 180);        // rising sweep
-    else if (kind === 'duplicate') tone(440, 440, 220);  // flat mid tone
-    else tone(200, 200, 320);                             // low buzz — error/not-found
+    const vol = VOLUME[settings.volume];
+    if (!vol) return;
+    const ctx = ensureAudioCtx();
+    if (!ctx) return;
+    masterGain.gain.value = vol;
+    if (kind === 'success') {            // double rising chirp
+      note(0, 800, 1200, 0.16, 'square', 0.42);
+      note(0.2, 800, 1200, 0.16, 'square', 0.42);
+    } else if (kind === 'vip') {         // three-step fanfare so a VIP is unmistakable by ear
+      note(0, 800, 1200, 0.15, 'square', 0.42);
+      note(0.18, 1000, 1500, 0.15, 'square', 0.42);
+      note(0.36, 1200, 1800, 0.34, 'square', 0.46);
+    } else if (kind === 'duplicate') {   // two flat mid beeps
+      note(0, 440, 440, 0.2, 'square', 0.45);
+      note(0.28, 440, 440, 0.2, 'square', 0.45);
+    } else {                             // error / not found — two low buzzes
+      note(0, 200, 200, 0.34, 'sawtooth', 0.6);
+      note(0.42, 200, 200, 0.34, 'sawtooth', 0.6);
+    }
   }
 
-  // ---- Feedback layer: full-screen flash (Story 3.2.2) --------------------------------
+  // ---- Feedback layer: haptics ------------------------------------------------------------
+  // Web Vibration API: Android Chrome/Firefox only — iOS Safari doesn't implement it, so iPhones
+  // get sound + visuals only. Chrome also ignores vibrate() until the page has had a tap.
+  const HAPTIC = {
+    success: [90],
+    vip: [90, 60, 90, 60, 260],
+    duplicate: [150, 90, 150],
+    error: [420, 120, 420]
+  };
+  function haptic(kind) {
+    if (!settings.haptics || !navigator.vibrate) return;
+    try { navigator.vibrate(HAPTIC[kind] || HAPTIC.success); } catch (e) { /* unsupported */ }
+  }
+  function feedback(kind) { playFeedbackTone(kind); haptic(kind); }
+
+  // Browsers block audio and vibration until the user has tapped the page once. The camera starts on
+  // load with no tap, so prompt for one instead of letting the first scan silently be quiet.
+  let feedbackUnlocked = false;
+  function unlockFeedback() {
+    if (feedbackUnlocked) return;
+    feedbackUnlocked = true;
+    ensureAudioCtx();
+    if (settings.haptics && navigator.vibrate) { try { navigator.vibrate(12); } catch (e) { /* ignore */ } }
+    $('unlockHint').hidden = true;
+  }
+  ['pointerup', 'touchend', 'click', 'keydown'].forEach(function (ev) {
+    window.addEventListener(ev, unlockFeedback, { passive: true });
+  });
+
+  // ---- Feedback layer: full-screen flash (Story 3.2.2) + reticle reaction -------------------
   function flashScreen(color) {
-    const el = document.getElementById('flash');
+    const el = $('flash');
     el.className = color; // set color first so the transition has a starting point
-    // next frame: fade in fast (160ms), hold briefly, then the 420ms fade-out transition
-    // handles the rest — one smooth in-hold-out pulse instead of an abrupt on/off strobe.
+    // next frame: fade in fast, hold briefly, then the slower fade-out handles the rest —
+    // one smooth in-hold-out pulse instead of an abrupt on/off strobe.
     requestAnimationFrame(function () {
       el.classList.add('show');
       setTimeout(function () { el.classList.remove('show'); }, 200);
     });
   }
+  let reticleTimer = null;
+  function reactReticle(kind) { // 'ok' | 'dup' | 'err' | 'vip'
+    const r = $('reticle');
+    r.classList.remove('ok', 'dup', 'err', 'vip', 'pulse');
+    void r.offsetWidth;
+    r.classList.add(kind, 'pulse');
+    clearTimeout(reticleTimer);
+    reticleTimer = setTimeout(function () { r.classList.remove('ok', 'dup', 'err', 'vip', 'pulse'); }, 1100);
+  }
 
   // ---- Result modal (tier-colored, Story 3.3.2) ---------------------------------------
-  let continuousScan = false;
-  const continuousScanCheckbox = document.getElementById('continuousScanCheckbox');
+  let continuousScan = !!settings.continuous;
+  const continuousScanCheckbox = $('continuousScanCheckbox');
+  continuousScanCheckbox.checked = continuousScan;
   continuousScanCheckbox.addEventListener('change', function () {
     continuousScan = continuousScanCheckbox.checked;
+    settings.continuous = continuousScan;
+    saveSettings();
+    showToast(continuousScan ? 'Fast mode on — scanning continues behind result cards' : 'Fast mode off — scanning pauses while a card is open');
   });
 
-  function isModalOpen() { return !document.getElementById('resultModal').hidden; }
-  function closeModal() { document.getElementById('resultModal').hidden = true; }
+  let dismissTimer = null;
+  let sessionCount = 0;
+  function isModalOpen() { return !$('resultModal').hidden; }
+  function closeModal() {
+    clearTimeout(dismissTimer);
+    $('resultModal').hidden = true;
+  }
+  $('resultModal').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
 
   function showResultModal(status, data, message) {
-    const modal = document.getElementById('resultModal');
+    const modal = $('resultModal');
     let html;
+    let autoMs = 0;
+    const isVip = data && data.ticket_type === 'VIP Pass';
+    const bar = function (ms) { return '<div class="dismiss-bar" style="animation-duration:' + ms + 'ms"></div>'; };
 
     if (status === 'SUCCESS') {
       const tier = data.ticket_type || 'Regular Attendee';
       const color = CONFIG.TIER_COLORS[tier] || CONFIG.TIER_COLORS['Regular Attendee'];
+      if (settings.autoDismiss) autoMs = isVip ? CONFIG.AUTO_DISMISS_VIP_MS : CONFIG.AUTO_DISMISS_MS;
       html =
-        '<div class="card"><div class="tier-bar" style="background:' + color + '">' + escapeHtml_(tier) + '</div>' +
+        '<div class="card' + (isVip ? ' vip' : '') + '"><div class="tier-bar" style="background:' + color + '">' + escapeHtml_(tier) + '</div>' +
+        (autoMs ? bar(autoMs) : '') +
         '<div class="body">' +
+        (isVip ? '<div class="vip-star">⭐</div>' : '') +
         '<p class="msg" style="color:' + color + '">CHECKED IN</p>' +
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
@@ -378,7 +631,7 @@
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
         (data.table_allocation ? '<span class="seat">Table/Seat: ' + escapeHtml_(data.table_allocation) + '</span>' : '') +
-        (data.initial_checkin_timestamp ? '<div><span class="first-seen">First checked in: ' + escapeHtml_(data.initial_checkin_timestamp) + '</span></div>' : '') +
+        (data.initial_checkin_timestamp ? '<div><span class="first-seen">First checked in at ' + escapeHtml_(fmtTime(data.initial_checkin_timestamp)) + '</span></div>' : '') +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else if (status === 'QUEUED_OFFLINE') {
       // Roster-cache hit while offline (Story 3.4 mitigation): still shows the tier-colored
@@ -387,9 +640,12 @@
       const tier = data.ticket_type || 'Regular Attendee';
       const color = CONFIG.TIER_COLORS[tier] || CONFIG.TIER_COLORS['Regular Attendee'];
       const suspectDup = data.checkin_status === 'Checked-In';
+      if (settings.autoDismiss && !suspectDup) autoMs = isVip ? CONFIG.AUTO_DISMISS_VIP_MS : CONFIG.AUTO_DISMISS_MS;
       html =
-        '<div class="card' + (suspectDup ? ' duplicate' : '') + '"><div class="tier-bar' + (suspectDup ? ' duplicate-bar' : '') + '" style="' + (suspectDup ? '' : 'background:' + color) + '">' + escapeHtml_(tier) + '</div>' +
+        '<div class="card' + (suspectDup ? ' duplicate' : (isVip ? ' vip' : '')) + '"><div class="tier-bar' + (suspectDup ? ' duplicate-bar' : '') + '" style="' + (suspectDup ? '' : 'background:' + color) + '">' + escapeHtml_(tier) + '</div>' +
+        (autoMs ? bar(autoMs) : '') +
         '<div class="body">' +
+        (isVip && !suspectDup ? '<div class="vip-star">⭐</div>' : '') +
         '<p class="msg" style="color:' + (suspectDup ? 'var(--amber)' : color) + '">' + (suspectDup ? 'MAY ALREADY BE CHECKED IN' : 'OFFLINE — QUEUED') + '</p>' +
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
@@ -412,13 +668,28 @@
         '</div><button class="close" onclick="cco_closeModal()">Try again</button></div>';
     }
 
+    clearTimeout(dismissTimer);
     modal.innerHTML = html;
     modal.hidden = false;
+    if (autoMs) dismissTimer = setTimeout(closeModal, autoMs);
   }
   window.cco_closeModal = closeModal;
 
   function escapeHtml_(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+
+  // Sheet timestamps are ISO 8601 (e.g. 2026-10-02T12:14:32+08:00) — show the time, not the raw string.
+  function fmtTime(iso) {
+    const d = new Date(iso);
+    return isNaN(d) ? String(iso) : d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', second: '2-digit' });
+  }
+
+  function countScan() {
+    sessionCount++;
+    const el = $('scanCount');
+    el.textContent = '✓ ' + sessionCount;
+    bump(el);
   }
 
   // ---- Core check-in call (shared by camera scan + manual PIN, Story 3.1.2 / 3.3) -----
@@ -437,45 +708,56 @@
         // Roster cache hit: identify the attendee (tier/name/table) even offline (mitigation
         // for the "can't spot a VIP with no connection" gap).
         const suspectDup = cached.checkin_status === 'Checked-In';
-        flashScreen(suspectDup ? 'amber' : 'green');
-        playFeedbackTone(suspectDup ? 'duplicate' : 'success');
+        const vip = cached.ticket_type === 'VIP Pass';
+        flashScreen(suspectDup ? 'amber' : (vip ? 'gold' : 'green'));
+        reactReticle(suspectDup ? 'dup' : (vip ? 'vip' : 'ok'));
+        feedback(suspectDup ? 'duplicate' : (vip ? 'vip' : 'success'));
+        if (!suspectDup) countScan();
         showResultModal('QUEUED_OFFLINE', cached, null);
       } else {
         flashScreen('amber');
-        playFeedbackTone('duplicate'); // neutral tone — not a hard error, not a confirmed success
+        reactReticle('dup');
+        feedback('duplicate'); // neutral tone — not a hard error, not a confirmed success
         showResultModal('QUEUED', {}, null);
       }
       return;
     }
 
     if (json.status === 'SUCCESS') {
-      flashScreen('green');
-      playFeedbackTone('success');
+      const vip = json.data && json.data.ticket_type === 'VIP Pass';
+      flashScreen(vip ? 'gold' : 'green');
+      reactReticle(vip ? 'vip' : 'ok');
+      feedback(vip ? 'vip' : 'success');
+      countScan();
       showResultModal('SUCCESS', json.data, json.message);
     } else if (json.status === 'DUPLICATE') {
       flashScreen('amber');
-      playFeedbackTone('duplicate');
+      reactReticle('dup');
+      feedback('duplicate');
       showResultModal('DUPLICATE', json.data, json.message);
     } else if (json.status === 'NOT_FOUND') {
       flashScreen('red');
-      playFeedbackTone('error');
+      reactReticle('err');
+      feedback('error');
       showResultModal('NOT_FOUND', {}, json.message);
     } else {
       flashScreen('red');
-      playFeedbackTone('error');
+      reactReticle('err');
+      feedback('error');
       showResultModal('ERROR', {}, json.message || 'Unexpected response.');
     }
   }
 
   // ---- Manual PIN fallback (Story 3.3) -------------------------------------------------
-  const manualBtn = document.getElementById('manualBtn');
-  const manualPanel = document.getElementById('manualPanel');
-  const manualCode = document.getElementById('manualCode');
+  const manualBtn = $('manualBtn');
+  const manualPanel = $('manualPanel');
+  const manualCode = $('manualCode');
   manualBtn.addEventListener('click', function () {
     manualPanel.hidden = !manualPanel.hidden;
+    manualBtn.textContent = manualPanel.hidden ? '⌨️ Enter code' : '✕ Close keypad';
     if (!manualPanel.hidden) manualCode.focus();
   });
-  document.getElementById('manualSubmit').addEventListener('click', function () {
+  $('manualSubmit').addEventListener('click', function () {
     const code = manualCode.value.trim();
     if (!code) return;
     ensureAudioCtx();
@@ -483,17 +765,21 @@
     manualCode.value = '';
   });
   manualCode.addEventListener('keydown', function (e) {
-    if (e.key === 'Enter') document.getElementById('manualSubmit').click();
+    if (e.key === 'Enter') $('manualSubmit').click();
   });
 
   // ---- Camera scan core (Story 3.1) ----------------------------------------------------
   let scanLocked = false;
   let cameraOn = false;
-  const html5QrCode = new Html5Qrcode('reader');
-  const readerEl = document.getElementById('reader');
-  const readerPausedEl = document.getElementById('readerPaused');
-  const torchBtn = document.getElementById('torchBtn');
-  const cameraToggleBtn = document.getElementById('cameraToggleBtn');
+  const html5QrCode = new Html5Qrcode('reader', {
+    formatsToSupport: [Html5QrcodeSupportedFormats.QR_CODE],
+    experimentalFeatures: { useBarCodeDetectorIfSupported: true } // native detector where available, JS fallback otherwise
+  });
+  const readerPausedEl = $('readerPaused');
+  const reticleEl = $('reticle');
+  const hintEl = $('hint');
+  const torchBtn = $('torchBtn');
+  const cameraToggleBtn = $('cameraToggleBtn');
 
   function onScanSuccess(decodedText) {
     if (scanLocked) return; // 2.0s scan-freeze debounce (Story 3.1.3)
@@ -501,34 +787,45 @@
     // screen, and the same QR is usually still sitting in frame — without this guard it would
     // re-trigger a second check-in the moment the 2s debounce lapsed, even before the usher had
     // read the first result. Default: don't scan again until that card is dismissed. The
-    // "keep scanning" checkbox opts back into the old always-on behavior (2s buffer only) for
+    // "keep scanning" switch opts back into the always-on behavior (2s buffer only) for
     // ushers who prefer to just keep waving codes through a fast line.
     if (isModalOpen() && !continuousScan) return;
+    if (!$('settingsSheet').hidden) return; // settings sheet is open — don't check anyone in behind it
     scanLocked = true;
+    reticleEl.classList.add('locked');
     ensureAudioCtx();
     submitCheckin(decodedText.trim());
-    setTimeout(function () { scanLocked = false; }, CONFIG.SCAN_FREEZE_MS);
+    setTimeout(function () { scanLocked = false; reticleEl.classList.remove('locked'); }, CONFIG.SCAN_FREEZE_MS);
+  }
+
+  function setCameraUi(on) {
+    cameraOn = on;
+    readerPausedEl.hidden = on;
+    reticleEl.hidden = !on;
+    hintEl.hidden = !on;
+    if (!on) torchBtn.hidden = true;
+    cameraToggleBtn.textContent = on ? '📷 Camera off' : '📷 Camera on';
   }
 
   function startCamera() {
+    // No qrbox: the whole frame is decoded, so a code is picked up anywhere in view; the reticle
+    // is guidance only. This also keeps decoding correct now that the video fills the viewport
+    // with object-fit: cover (a fixed-pixel qrbox assumes the video isn't cropped).
     return html5QrCode.start(
       { facingMode: 'environment' },
-      { fps: 10, qrbox: { width: 250, height: 250 } },
+      { fps: 10 },
       onScanSuccess,
       function () { /* per-frame decode miss — expected constantly, ignore */ }
     ).then(function () {
-      cameraOn = true;
-      readerEl.hidden = false;
-      readerPausedEl.hidden = true;
-      cameraToggleBtn.textContent = '📷 Turn Camera Off';
+      setCameraUi(true);
       setupTorch();
     }).catch(function (err) {
-      cameraOn = false;
-      readerEl.hidden = true;
-      readerPausedEl.hidden = true;
-      cameraToggleBtn.textContent = '📷 Camera Off';
+      setCameraUi(false);
+      readerPausedEl.querySelector('div:last-child').innerHTML = 'Camera unavailable.<br>Use <b>Enter code</b> to check people in.';
+      cameraToggleBtn.textContent = '📷 Retry camera';
       showResultModal('ERROR', {}, 'Camera unavailable (' + err + '). Use manual code entry instead.');
       manualPanel.hidden = false;
+      manualBtn.textContent = '✕ Close keypad';
     });
   }
 
@@ -538,11 +835,8 @@
   // phone left running for a multi-hour shift).
   function stopCamera() {
     return html5QrCode.stop().then(function () {
-      cameraOn = false;
-      readerEl.hidden = true;
-      readerPausedEl.hidden = false;
-      torchBtn.hidden = true;
-      cameraToggleBtn.textContent = '📷 Turn Camera On';
+      setCameraUi(false);
+      readerPausedEl.querySelector('div:last-child').innerHTML = 'Camera paused to save battery.<br>Tap <b>Camera on</b> or use <b>Enter code</b>.';
     }).catch(function () { /* already stopped — nothing to do */ });
   }
 
@@ -552,11 +846,10 @@
     p.finally(function () { cameraToggleBtn.disabled = false; });
   });
 
-  startCamera();
-
   // ---- Flashlight toggle, feature-detected (Story 3.1.4) -------------------------------
   function setupTorch() {
     let torchOn = false;
+    torchBtn.classList.remove('on');
     try {
       const caps = html5QrCode.getRunningTrackCameraCapabilities();
       const torchFeature = caps && caps.torchFeature && caps.torchFeature();
@@ -565,7 +858,7 @@
         torchBtn.onclick = function () {
           torchOn = !torchOn;
           torchFeature.apply(torchOn);
-          torchBtn.style.background = torchOn ? '#F59E0B' : '#374151';
+          torchBtn.classList.toggle('on', torchOn);
         };
       }
     } catch (e) {
@@ -573,26 +866,85 @@
     }
   }
 
+  // ---- Settings sheet ---------------------------------------------------------------------
+  const settingsSheet = $('settingsSheet');
+  const settingsBackdrop = $('settingsBackdrop');
+  function openSettings() { settingsSheet.hidden = false; settingsBackdrop.hidden = false; }
+  function closeSettings() { settingsSheet.hidden = true; settingsBackdrop.hidden = true; }
+  $('menuBtn').addEventListener('click', openSettings);
+  $('closeSettingsBtn').addEventListener('click', closeSettings);
+  settingsBackdrop.addEventListener('click', closeSettings);
+
+  function renderVolumeSeg() {
+    document.querySelectorAll('#volumeSeg button').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(b.dataset.v === settings.volume));
+    });
+  }
+  document.querySelectorAll('#volumeSeg button').forEach(function (b) {
+    b.addEventListener('click', function () {
+      settings.volume = b.dataset.v;
+      saveSettings(); renderVolumeSeg();
+      ensureAudioCtx(); playFeedbackTone('success'); // audible preview at the chosen level
+    });
+  });
+  renderVolumeSeg();
+
+  const hapticsToggle = $('hapticsToggle');
+  hapticsToggle.checked = settings.haptics;
+  if (!navigator.vibrate) {
+    hapticsToggle.disabled = true;
+    $('hapticNote').textContent = 'Not supported by this browser (iPhones/iPads don’t allow web vibration).';
+  }
+  hapticsToggle.addEventListener('change', function () {
+    settings.haptics = hapticsToggle.checked; saveSettings();
+    if (settings.haptics) haptic('success');
+  });
+
+  const autoDismissToggle = $('autoDismissToggle');
+  autoDismissToggle.checked = settings.autoDismiss;
+  autoDismissToggle.addEventListener('change', function () {
+    settings.autoDismiss = autoDismissToggle.checked; saveSettings();
+  });
+
+  $('testFeedbackBtn').addEventListener('click', function () {
+    ensureAudioCtx();
+    feedback('vip');
+    showToast(settings.volume === 'off' ? 'Sound is off' : 'Played test tone' + (navigator.vibrate && settings.haptics ? ' + vibration' : ''));
+  });
+
+  // Manual override buttons — don't make anyone wait on the 15s/5min auto timers, or guess
+  // whether caching/syncing "is working"; both give instant on-screen feedback either way.
+  $('refreshRosterBtn').addEventListener('click', async function () {
+    const btn = this;
+    btn.disabled = true; btn.textContent = '🔄 Refreshing…';
+    const r = await fetchRoster();
+    btn.disabled = false; btn.textContent = '🔄 Refresh roster';
+    const n = Object.keys((readRosterCache() || {}).byCode || {}).length;
+    showToast(r === 'ok' ? 'Roster refreshed — ' + n + ' cached' : r === 'unsupported' ? 'Server has no roster endpoint — redeploy Code.gs' : 'Offline — using cached roster');
+  });
+  $('syncNowBtn').addEventListener('click', async function () {
+    const btn = this;
+    btn.disabled = true; btn.textContent = '⏫ Syncing…';
+    const before = readQueue().length;
+    const sent = await trySyncOfflineQueue();
+    btn.disabled = false; btn.textContent = '⏫ Sync now';
+    showToast(before === 0 ? 'Nothing to sync' : sent ? 'Synced ' + sent + ' queued scan' + (sent === 1 ? '' : 's') : 'Couldn’t sync yet — ' + before + ' still queued');
+  });
+  $('changeStationBtn').addEventListener('click', function () {
+    deviceId = askStationName();
+    $('stationLabel').textContent = deviceId;
+    showToast('Station set to ' + deviceId);
+  });
+  $('apiNote').textContent = 'API …' + CONFIG.API_BASE.slice(-18);
+
   // ---- Init -----------------------------------------------------------------------------
+  reticleEl.hidden = true; hintEl.hidden = true; // shown once the camera actually starts
+  cameraToggleBtn.textContent = '📷 Starting…';
   updateQueueUi();
   updateRosterBadge();
   trySyncOfflineQueue();
   fetchRoster();
-
-  // Manual override buttons — don't make anyone wait on the 15s/5min auto timers, or guess
-  // whether caching/syncing "is working"; both give instant on-screen feedback either way.
-  document.getElementById('refreshRosterBtn').addEventListener('click', async function () {
-    const btn = this;
-    btn.disabled = true; btn.textContent = '🔄 Refreshing…';
-    await fetchRoster();
-    btn.disabled = false; btn.textContent = '🔄 Refresh roster';
-  });
-  document.getElementById('syncNowBtn').addEventListener('click', async function () {
-    const btn = this;
-    btn.disabled = true; btn.textContent = '⏫ Syncing…';
-    await trySyncOfflineQueue();
-    btn.disabled = false; btn.textContent = '⏫ Sync now';
-  });
+  startCamera();
 })();
 </script>
 </body>
