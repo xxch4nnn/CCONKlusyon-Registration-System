@@ -127,7 +127,9 @@ untested — including the new full-screen camera layout, the vibration fallback
   deployment was re-deployed without choosing **New version**, so the web app kept running Version 4.
 - **Fix (code):** `ping` now reports `version`; the scanner shows a **red dot on ⚙️ and a warning in Settings** when the deployed script is outdated, and the backend version when current.
   Tests B1–B5 (baseline 6 failing → all pass). **Fix (action):** Manage deployments → ✏️ → Version: **New version** → Deploy → the dialog must show Version 5+ dated today.
-  **Status:** **Open — needs you** (the detector is built; the redeploy is yours).
+  **Status:** **Resolved (2026-09-21).** The redeploy was done properly: a read-only `?action=ping` against the scanner's `/exec` URL (2026-09-21 02:26 GMT+8) returns
+  `pong` with `"version":"2026-09-20.1"` (Version 6) — the same URL, new code. The repo's `Code.gs` is now `2026-09-20.2` (the keyed backend); it is **not** deployed on purpose
+  until the access-key rollout reaches step 4 (HANDOFF item 0), so a `ping` showing `.1` is expected, not stale, until then.
 
 ### BUG-013 — VIP alert said "Table: 0"; unassigned seats shown as "Table/Seat: 0"
 - **Found:** your Telegram screenshot + a sheet audit: `table_allocation` is `0` on all 10 rows (the sheet's placeholder for "not assigned").
@@ -137,4 +139,4 @@ untested — including the new full-screen camera layout, the vibration fallback
 ## Open verification items
 iOS Safari + Android Chrome pass (Story 3.5 — waived for Gate 2, owed before Gate 5); noisy-room audibility (3.2.3);
 Telegram alert timing (4.1.4); projector wall on real 1080p/4K + 30-min soak (5.2.2/5.2.3); device retest of BUG-002/003/004/007/008/009/010/011;
-**redeploy of the new `Code.gs`** (live server still old as of 2026-09-19 — `?action=ping` returns Unknown action).
+the keyed `Code.gs` (`2026-09-20.2`) rollout — the live server is Version 6 / `2026-09-20.1` as of 2026-09-21 (BUG-012 resolved; the keyed version waits for HANDOFF item 0 step 4).

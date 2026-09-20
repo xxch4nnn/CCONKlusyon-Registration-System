@@ -31,6 +31,31 @@ is only the top-level status snapshot.
   reconnect state. Layout verified with mocked data at 1080p; not yet run against the live sheet on a projector.
   The Attendance tab groups by club, not Stage 2's org cluster (the roster has no `org_classification`). `MAX_TILES` is 400, not Stage 2's ≤32 (Recent lists everyone) — see `CHANGES.md`.
 
+## Stage 3 exit tracker (added 2026-09-21) — scope is Stage 3 ONLY
+
+Stage 3's exit gate hands off *to* Stage 4; Epic 6 (beta), Epic 7 (hardening) and Epic 8 (event day) are Stage 4 and are **not started** until Stage 3 reports COMPLETE and you say go.
+**Status today: INCOMPLETE.** Stage 3 exit DoD (build plan §13.4):
+
+| # | Exit DoD item | Owner | State |
+|---|---|---|---|
+| 1 | All ~300 credentials in `Master_Attendance` frozen (static PINs + QR URLs) | you (roster) → `generateCredentials` | ⏳ only 10 test rows; waiting on the council's final roster |
+| 2 | Bulk email merge run, spam-greylisting checked across institutional accounts | you | ⏳ one address per provider spot-checked only |
+| 3 | Secretariat laptop + HDMI stage-switcher handshake certified | you | ⏳ `display.html` verified against mocked data only |
+| 4 | Two paper rosters printed, laminated, staged at Usher Station 1 | you | ⏳ `roster-print.html` built; print waits on item 1 |
+
+Component/integration verification (§13.1/13.2 — still Stage 3):
+
+| Step | What | Owner | State |
+|---|---|---|---|
+| a | BUG-012 live redeploy | — | ✅ live is Version 6 / `2026-09-20.1` (probed 2026-09-21) |
+| b | Access-key rollout (item 0 below, exact order) | you (Claude can check `ping` output) | ⏳ not started |
+| c | Device-retest BUG-003/004/007/008/009/010/011 on iOS Safari + Android Chrome | you | ⏳ (iOS also owed to Gate 5) |
+| d | Time a real VIP alert end-to-end, target ≤ 3 s (Story 4.1.4, `vipAlertReport`) | you | ⏳ |
+| e | `display.html` on real 1080p/4K hardware (doubles as exit-DoD 3) | you | ⏳ |
+| f | QA Gate 3 (`docs/sprint-backlog.md`) as one formal pass, once a–e pass | Claude drafts, you confirm | ⏳ |
+
+Stop at Stage 3 COMPLETE / INCOMPLETE / BLOCKED and wait for a go-ahead before any Stage 4 work.
+
 ## Do next (user-side — nothing here can be done from a Claude session)
 
 0. **ACCESS-KEY ROLL-OUT — zero downtime, in exactly this order.** (The live Version 6 ignores an extra `key` parameter — checked against the live URL — so devices can hold the key BEFORE the server starts enforcing it.

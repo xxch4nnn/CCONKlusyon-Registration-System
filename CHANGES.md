@@ -5,6 +5,14 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-21 — Stage 3 exit scoped; BUG-012 closed; exit tracker added to HANDOFF
+**By:** user (pasted a Stage 3-only prompt: Stage 3 hands off *to* Stage 4, so Epic 6 beta / Epic 7 hardening / Epic 8 event day are out of scope until Stage 3 is COMPLETE) + Claude
+**Audit (read-only, nothing deployed or changed on the live system):** the pasted prompt said the live Apps Script was stale (BUG-012). Probe of the `/exec` URL: `?action=ping` → `pong`, `"version":"2026-09-20.1"` = Version 6, same URL. BUG-012 is therefore resolved
+(the repo's `2026-09-20.2` is the *keyed* backend and is deliberately not deployed until the access-key rollout step 4). The repo was clean and level with `origin/main` (`310a44e`).
+**Change (docs only):** `docs/bug-log.md` BUG-012 → Resolved and the open-items line corrected; `HANDOFF.md` gains a **Stage 3 exit tracker** (the four exit-DoD items + the component/integration steps a–f, each with owner and state).
+**Not changed / not claimed:** no code, no push. Everything in the tracker marked "you" needs a phone, the Apps Script editor, Telegram or hardware, which no Claude session can reach. Stage 3 status today: **INCOMPLETE** (not BLOCKED — the only hard block is the final roster for exit-DoD 1 and 4).
+**Note:** `docs/audit-2026-09-20.md` is a dated snapshot and still says the redeploy is a Gate 3 blocker; left as written, superseded by this entry.
+
 ## 2026-09-20 — Shared access key on every data endpoint; name search on the scanner
 **By:** user ("add a shared secret key. adapt surname search on the scanner.") + Claude
 **Why (the "public PIN list" decision):** the `/exec` URL is in a public repo and the deployment is "Anyone", so `roster` handed every name and PIN to anyone with the URL, and a PIN alone could check anyone in.
