@@ -5,6 +5,14 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-26 — Stage 3 formally scored (YELLOW); schedule risk flagged; local release-candidate tag
+**By:** user (dropped two external, ChatGPT-authored SDLC framework docs with no accompanying request — an "SDLC position" memo and a generic Stage 3 exit checklist) + Claude
+**What was done:** read both documents, confirmed they're generic templates (not project-specific facts), and cross-checked their checklist against the real repo state rather than transcribing it. Re-probed the live `/exec` URL (read-only): still Version 6, `2026-09-20.1`, key not enforced — **nothing on the live infra has changed since 2026-09-21**. Reran `node tests/run.js` + `tests/camera.js`: all green, repo clean.
+**Decision:** Stage 3 = **YELLOW — conditionally ready**, using the new document's own GREEN/YELLOW/RED rubric (see `HANDOFF.md`). No code defect blocks it; every gap is a device test, a real roster, or the access-key rollout — all user-side.
+**Release candidate:** created local git tag `stage3-rc-2026-09-26` at `2d13970` (**not pushed**, per the project's "only push when asked" rule).
+**The actual finding:** the original Sept 13 plan (`docs/private/sdlc-stage3-implementation.md`) scheduled **today as the VIP Roster Freeze** and tomorrow as the production email dispatch, 6 days before Oct 2. The roster is still 10 test rows and none of the four Stage 3 exit-DoD items (added 2026-09-21) have moved. This is a schedule risk, not a build gap — flagged in `HANDOFF.md`, not something a Claude session can close.
+**Not changed:** no code. Docs only (`HANDOFF.md`, this entry).
+
 ## 2026-09-21 — Stage 3 exit scoped; BUG-012 closed; exit tracker added to HANDOFF
 **By:** user (pasted a Stage 3-only prompt: Stage 3 hands off *to* Stage 4, so Epic 6 beta / Epic 7 hardening / Epic 8 event day are out of scope until Stage 3 is COMPLETE) + Claude
 **Audit (read-only, nothing deployed or changed on the live system):** the pasted prompt said the live Apps Script was stale (BUG-012). Probe of the `/exec` URL: `?action=ping` → `pong`, `"version":"2026-09-20.1"` = Version 6, same URL. BUG-012 is therefore resolved

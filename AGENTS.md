@@ -23,6 +23,9 @@ when it happens.
 - **GitHub repo:** `xxch4nnn/CCONKlusyon-Registration-System` (**public**, branch `main`). A local
   Claude Code session on the user's machine can commit and push directly (as of Sept 19; the
   earlier cloud sessions could not and shipped files for manual upload).
+- **Live GitHub Pages:** `https://xxch4nnn.github.io/CCONKlusyon-Registration-System/` — `scanner.html`, `display.html`,
+  `roster-print.html` are served straight from `main`, no build step. Rebuilds ~1–2 min after a push;
+  `gh api repos/xxch4nnn/CCONKlusyon-Registration-System/pages --jq .status` shows `building`/`built`.
 - **Working workbook:** `1memjsk0qCcFqAdL5yMXAYU0iFf5OkGk1cwg0e56FbOY`
   - **Registration DB tab:** `Master_Attendance` (gid=155323925) — the only tab Claude may write to
     (via Apps Script the user deploys — Claude does not write to any Sheet directly).

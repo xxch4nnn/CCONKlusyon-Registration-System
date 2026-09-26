@@ -56,20 +56,24 @@ Component/integration verification (§13.1/13.2 — still Stage 3):
 
 Stop at Stage 3 COMPLETE / INCOMPLETE / BLOCKED and wait for a go-ahead before any Stage 4 work.
 
+### Formal Stage 3 decision (2026-09-26, cross-checked against an external exit-checklist template)
+**Decision: YELLOW — conditionally ready to test, once tested.** No P0/P1 implementation defect; core paths (checkin/sync/recent/roster, offline queue, VIP alert code, name search, access key) exist and pass `node tests/run.js` + `tests/camera.js` (rerun today, all green). What's missing for GREEN is entirely in row a-e above (device retests, timed alert, real hardware) plus a real roster — none of it a code defect.
+**Release candidate:** local git tag `stage3-rc-2026-09-26` at commit `2d13970` (**not pushed** — ask before pushing tags). Re-tag after any further code change; don't let QA test a moving target.
+**Schedule risk (the actual finding, not the checklist):** the original Sept 13 plan (`docs/private/sdlc-stage3-implementation.md` §5.1) put **today, Sept 26, as "VIP Roster Freeze"** and Sept 27 as "Production Bulk Email Dispatch" — 6 days before the Oct 2 event. As of this check the sheet still has 10 test rows, the access-key rollout (step b) hasn't started, and no device retest has happened since Sept 20. All four exit-DoD items above are unmoved since the Sept 21 tracker. If the roster isn't final soon, the Sept 27 email date and the Oct 2 date both come under pressure — this is worth flagging to whoever owns the timeline, independent of anything in this repo.
+
 ## Do next (user-side — nothing here can be done from a Claude session)
 
 0. **ACCESS-KEY ROLL-OUT — zero downtime, in exactly this order.** (The live Version 6 ignores an extra `key` parameter — checked against the live URL — so devices can hold the key BEFORE the server starts enforcing it.
    Deploying the keyed backend first would lock every device out until they were all updated.)
    1. **Make the key.** Apps Script → Project settings → Script properties → add `API_KEY` = a long random string (24+ letters/digits, e.g. from a password manager). Adding a property needs no redeploy and Version 6 ignores it.
-      **Never paste it in chat or the repo.** (`generateAccessKey` in the new `Code.gs` does the same job, but it isn't deployed yet.)
-   2. **Push the frontend** to GitHub Pages (commit + push `scanner.html`, `display.html`, `roster-print.html` — ask Claude). Nothing changes for users yet: with no key stored the new pages send none.
-   3. **Give each device its private link:** `<your Pages address>/scanner.html#key=<KEY>` for each phone; `…/display.html#key=<KEY>` once on the Secretariat laptop (the print page shares that laptop's storage). Everything keeps working —
-      the pages now send the key and Version 6 simply ignores it. Delete the messages afterwards.
+      **Never paste it in chat or the repo.** (`generateAccessKey` in the new `Code.gs` does the same job, but it isn't deployed yet.) — **⏳ still to do, as of 2026-09-26**
+   2. ~~Push the frontend to GitHub Pages~~ — **✅ done and reverified 2026-09-26**: `scanner.html`, `display.html`, `roster-print.html` on GitHub Pages are byte-identical to this repo's `main`. Nothing changes for users yet: with no key stored the pages send none.
+   3. **Give each device its private link:** `https://xxch4nnn.github.io/CCONKlusyon-Registration-System/scanner.html#key=<KEY>` for each phone; the same host's `display.html#key=<KEY>` once on the Secretariat laptop (the print page shares that laptop's storage). Everything keeps working —
+      the pages now send the key and Version 6 simply ignores it. Delete the messages afterwards. — **⏳ blocked on step 1**
    4. **Then enforce it:** paste the current `apps-script/Code.gs` (`BACKEND_VERSION 2026-09-20.2`) → Deploy → Manage deployments → ✏️ → Version: **New version** → Deploy. Open `…/exec?action=ping&key=<KEY>` — it must show
-      `"version":"2026-09-20.2"`, `"secured":true`, `"authorized":true`. Every device already holds the key, so the switch is invisible.
+      `"version":"2026-09-20.2"`, `"secured":true`, `"authorized":true`. Every device already holds the key, so the switch is invisible. — **⏳ blocked on steps 1 and 3**
    5. **Check:** no red dot on ⚙️ on any phone; Settings → Access key shows "ends …xxxx"; the wall says "Live"; `?action=roster` without a key now returns `UNAUTHORIZED`. A phone with a wrong/missing key says so plainly and keeps its scans.
    To rotate (e.g. after the event): edit the `API_KEY` property and re-issue links — no redeploy needed.
-0. **NOTHING FROM TONIGHT'S FRONTEND WORK IS PUSHED** (three-tab wall, audience view, Attendance tab, name search, access key). GitHub Pages serves the old pages until step 2 above.
 0. **Operator note for the wall:** open `display.html` on the Secretariat laptop, F11, leave it on tab **1** (audience view, clean); press **2** for the Recent list, **3** for the Attendance (secretariat) view, **1** to go back to the audience view.
    After a bad run: **Settings → Connection log → Copy** and send it. For any future `Code.gs` change: paste it, then **Deploy → Manage deployments → ✏️ → Version: New version → Deploy** — never "+ New deployment"; bump `BACKEND_VERSION` and confirm `?action=ping`.
 
