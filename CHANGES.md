@@ -5,6 +5,30 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-28 — EmailBlaster.gs redesigned against the CCOnklusyon 2026 identity; dispatch tracking added
+**By:** user (design system, copy, links, duplicate-send concern) + Claude
+**What:**
+1. **Visual redesign.** `INVITATION_HTML_TEMPLATE` restyled to the "CCOnklusyon 2026" Design System
+   (royal blue `#060d53` / navy `#040e3f` ground, gold `#fcdf93`/`#f1b763`/`#c98d45`, Cinzel +
+   Cormorant Garamond). Tokens are inlined in a `BRAND` const (Apps Script can't import the token
+   file; email needs baked-in hex values). Copy per the user: separate logo block removed (hero
+   banner carries it), new greeting, "Table Number" only (no seat), five General Information links
+   (Event Primer, Info Sheet, Seating Plan, 3D Floor Plan, Emergency Plan), footer now "One Council,
+   One Vision. / 41st Council of Clubs and Organizations • CCOnklusyon: The Legacy CContinues".
+   Hero banner loads from `docs/assets/hero-banner.png` via `raw.githubusercontent.com`
+   (`HERO_BANNER_URL`) — a Drive "view" link serves an HTML viewer, not image bytes, so it won't
+   render in `<img>`. The five document links stay on Drive (click-through, no such problem).
+2. **Dispatch tracking.** New columns **N `pass_sent`, O `pass_sent_timestamp`** (`docs/db-schema.md`,
+   `COL` in `Code.gs`). A production `sendEventPasses` skips rows already marked sent and stamps both
+   columns after each successful send; test-mode sends never read or write them. `forceResend`
+   overrides deliberately. `sendCustomBlast` does not use it (an announcement isn't the invite).
+**Deviation:** two columns beyond the 13-column schema; no effect on check-in/sync/recent/roster.
+**Needs you:** add the `pass_sent` / `pass_sent_timestamp` headers after column M (until then the
+send still works, it just logs a warning and records nothing); paste the new `EmailBlaster.gs` into
+Apps Script and save; re-run `sendEventPassesBetaTest()` before any production send.
+
+---
+
 ## 2026-09-26 — Stage 3 formally scored (YELLOW); schedule risk flagged; local release-candidate tag
 **By:** user (dropped two external, ChatGPT-authored SDLC framework docs with no accompanying request — an "SDLC position" memo and a generic Stage 3 exit checklist) + Claude
 **What was done:** read both documents, confirmed they're generic templates (not project-specific facts), and cross-checked their checklist against the real repo state rather than transcribing it. Re-probed the live `/exec` URL (read-only): still Version 6, `2026-09-20.1`, key not enforced — **nothing on the live infra has changed since 2026-09-21**. Reran `node tests/run.js` + `tests/camera.js`: all green, repo clean.

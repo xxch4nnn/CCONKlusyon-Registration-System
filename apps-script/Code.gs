@@ -45,7 +45,10 @@ const SHEET_NAME = 'Master_Attendance';
 const COL = {
   EMAIL: 1, FULL_NAME: 2, ORG_CLASS: 3, CLUB_NAME: 4, DESIGNATION: 5,
   TICKET_TYPE: 6, ATTENDANCE_CODE: 7, QR_URL: 8, TABLE_ALLOC: 9,
-  PHOTO_URL: 10, CHECKIN_STATUS: 11, CHECKIN_TS: 12, CHECKED_IN_BY: 13
+  PHOTO_URL: 10, CHECKIN_STATUS: 11, CHECKIN_TS: 12, CHECKED_IN_BY: 13,
+  // N/O added 2026-09-28 (EmailBlaster dispatch tracking, see CHANGES.md) — add these two
+  // header cells to the live sheet yourself; Code.gs's check-in path never touches them.
+  PASS_SENT: 14, PASS_SENT_TS: 15
 };
 
 /**

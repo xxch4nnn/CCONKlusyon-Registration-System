@@ -23,8 +23,13 @@ instead of generating it at send-time. Code targets the real sheet.
 | K | `checkin_status` | Blank or `Pending` = not arrived; `Checked-In` written on first successful scan. |
 | L | `checkin_timestamp` | ISO 8601, `GMT+8` (`yyyy-MM-dd'T'HH:mm:ssXXX`). |
 | M | `checked_in_by` | Device/station id from the check-in payload. |
+| N | `pass_sent` | **Added 2026-09-28.** Blank = not yet dispatched; `TRUE` written by `sendEventPasses` after a successful **production** send (never by a test-mode send). `EmailBlaster.gs` skips any row where this is truthy, so re-running the blast never double-sends an invite. Add this header cell to the live sheet manually — `Code.gs`'s check-in path never reads or writes it. |
+| O | `pass_sent_timestamp` | **Added 2026-09-28.** ISO 8601 timestamp of the successful dispatch, written alongside N. |
 
-Tier colors (spec-locked): Gold `#B8860B` = VIP Pass, Royal Blue `#1A56DB` = Regular Attendee.
+Tier colors (spec-locked): Gold `#B8860B` = VIP Pass, Royal Blue `#1A56DB` = Regular Attendee. The
+invitation email (`EmailBlaster.gs`) now uses the CCOnklusyon 2026 identity (royal blue/gold,
+Cinzel + Cormorant Garamond) for its overall look — see the 2026-09-28 `CHANGES.md` entry. The
+spec-locked pair above still governs `scanner.html` and `display.html`, which are unchanged.
 
 See [`AGENTS.md`](../AGENTS.md) for the rules that govern this file and
 [`CHANGES.md`](../CHANGES.md) for why the schema differs from the spec.
