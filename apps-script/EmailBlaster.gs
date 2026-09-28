@@ -284,10 +284,10 @@ function buildInvitationFieldMap_(row) {
 
 // ============================ IMAGE PLACEHOLDERS ============================
 // HERO BANNER — the only image you manage by hand. It already carries the CCO seal + wordmark.
-// Served from this repo via GitHub raw content: keep the file at docs/assets/hero-banner.png on
+// Served from this repo via GitHub raw content: keep the file at docs/assets/hero-banner.jpg on
 // main. To change it, replace that file and push; to move it, change only this URL.
 // (The QR image comes from each row's qr_code_url column — nothing to swap.)
-const HERO_BANNER_URL = 'https://raw.githubusercontent.com/xxch4nnn/CCONKlusyon-Registration-System/main/docs/assets/hero-banner.png';
+const HERO_BANNER_URL = 'https://raw.githubusercontent.com/xxch4nnn/CCONKlusyon-Registration-System/main/docs/assets/hero-banner.jpg';
 // ===========================================================================
 
 const INVITATION_HTML_TEMPLATE = `

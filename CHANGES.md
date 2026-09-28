@@ -15,7 +15,7 @@ a decision trail so "why is it like this" never needs re-asking.
    banner carries it), new greeting, "Table Number" only (no seat), five General Information links
    (Event Primer, Info Sheet, Seating Plan, 3D Floor Plan, Emergency Plan), footer now "One Council,
    One Vision. / 41st Council of Clubs and Organizations • CCOnklusyon: The Legacy CContinues".
-   Hero banner loads from `docs/assets/hero-banner.png` via `raw.githubusercontent.com`
+   Hero banner loads from `docs/assets/hero-banner.jpg` via `raw.githubusercontent.com`
    (`HERO_BANNER_URL`) — a Drive "view" link serves an HTML viewer, not image bytes, so it won't
    render in `<img>`. The five document links stay on Drive (click-through, no such problem).
 2. **Dispatch tracking.** New columns **N `pass_sent`, O `pass_sent_timestamp`** (`docs/db-schema.md`,
