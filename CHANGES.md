@@ -22,6 +22,7 @@ a decision trail so "why is it like this" never needs re-asking.
    `COL` in `Code.gs`). A production `sendEventPasses` skips rows already marked sent and stamps both
    columns after each successful send; test-mode sends never read or write them. `forceResend`
    overrides deliberately. `sendCustomBlast` does not use it (an announcement isn't the invite).
+**Follow-up (same day, readability):** running text (greeting, reminders, links, table pill) moved to a system sans stack (`BRAND.fontBody`) — thin serifs at 15-17px on navy blurred on phones and mail clients rarely load the web fonts; Cinzel/Cormorant kept for the tier tag, attendance code, section labels and sign-off. Info links became a hairline-divided list with gold arrows, built from one `INFO_LINKS` array (HTML and plain text). "We can't wait to see you there!" is now centred inside the footer block. These fixes were first drafted in a separate claude.ai session that could not push; re-applied here so GitHub holds the single current version.
 **Deviation:** two columns beyond the 13-column schema; no effect on check-in/sync/recent/roster.
 **Needs you:** add the `pass_sent` / `pass_sent_timestamp` headers after column M (until then the
 send still works, it just logs a warning and records nothing); paste the new `EmailBlaster.gs` into
