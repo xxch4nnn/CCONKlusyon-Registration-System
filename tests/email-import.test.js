@@ -10,7 +10,7 @@ const MA_HEADERS = ['email', 'full_name', 'org_classification', 'club_name', 'de
 const SEAT_HEAD = ['No.', 'Table', 'Seat', 'Seating Area (floor plan)', 'Table Cluster', 'Category', 'Group / Club', 'Acronym', 'Cluster', 'Position', 'Title', 'First Name', 'Full Name', 'Other Name (as submitted)', 'Term', 'Email', 'Status', 'Remarks', 'Check-in'];
 const seatRow = o => SEAT_HEAD.map(h => ({ 'No.': o.no, Table: o.table || '', Category: o.cat, 'Group / Club': o.club || '', Cluster: o.cluster || '', Position: o.pos || '', 'Full Name': o.name, Email: o.email || '', Status: o.status || 'Seated' }[h] ?? ''));
 
-function world(maRows, seatRows) {
+function world(maRows, seatRows, opts = {}) {
   const ma = { values: [MA_HEADERS.slice(), ...maRows.map(r => { const a = MA_HEADERS.map(() => ''); Object.keys(r).forEach(k => { a[MA_HEADERS.indexOf(k)] = r[k]; }); return a; })] };
   const maSheet = {
     getDataRange: () => ({ getValues: () => ma.values.map(r => r.slice()), getFormulas: () => ma.values.map(r => r.map(() => '')) }),
@@ -20,12 +20,17 @@ function world(maRows, seatRows) {
     })
   };
   const seatValues = () => [['CCOnklusyon 2026 — Final Seating & Master List (updated 2026-10-01)'], ['One row per registration…'], SEAT_HEAD, ...seatRows.map(seatRow)]; // read live, so edits to SEATING show up on re-import
+  const seatSheet = { getDataRange: () => ({ getValues: () => seatValues() }) };
+  maSheet.getSheetId = () => 155323925;
   const sent = [], logs = [];
   const ctx = {
     console, JSON, Math, String, Date, Object, logs,
     Logger: { log: m => logs.push(String(m)) },
     SpreadsheetApp: {
-      getActiveSpreadsheet: () => ({ getSheetByName: () => maSheet }),
+      getActiveSpreadsheet: () => ({
+        getSheetByName: n => n === 'Final Seating' ? (opts.renamed ? null : seatSheet) : maSheet,
+        getSheets: () => [maSheet, Object.assign({ getSheetId: () => 828790481 }, seatSheet)]
+      }),
       openById: () => ({ getSheetByName: n => n === 'Final Seating' ? { getDataRange: () => ({ getValues: () => seatValues() }) } : null }),
       flush() {}
     },
@@ -63,6 +68,11 @@ ok('preview: nothing written', JSON.stringify(w.ma.values) === before);
 ok('preview: reports 6 to add, 2 skipped', w.logs.some(l => /PREVIEW.*Added 6/.test(l)) && w.logs.some(l => /Skipped 2/.test(l)), w.logs[0]);
 ok('preview: flags the old test row', w.logs.some(l => /did not come from Final Seating.*DELETE/.test(l)));
 ok('preview: flags a category outside the 12 types', w.logs.some(l => /not in the 12 attendee types.*Sponsor/.test(l)));
+
+// ---------- 1b. tab found by gid if renamed ----------
+const wr = world(TEST_ROWS, SEATING, { renamed: true });
+wr.run('importFinalSeatingPreview()');
+ok('preview: Final Seating found by gid 828790481 when the tab is renamed', wr.logs.some(l => /PREVIEW.*Added 6/.test(l)));
 
 // ---------- 2. import ----------
 w.run('importFinalSeating()');

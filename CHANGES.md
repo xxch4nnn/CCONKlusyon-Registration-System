@@ -5,6 +5,11 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Import reads Final Seating from the same workbook
+**By:** user (Final Seating is now a tab in the CCOnklusyon Event Checklist workbook, gid 828790481; the first preview run failed with "An unknown error has occurred" while opening the separate seating file from an Incognito window). `SEATING_SPREADSHEET_ID` is now blank = this workbook, so no cross-file permission is needed; the tab is found by name, or by gid 828790481 if renamed; a clear error names the tab if it's missing.
+
+---
+
 ## 2026-10-01 — Attendee types on the pass; named vs (TBA) invitations; Final Seating import
 **By:** user (12 attendee types; "(TBA)" → send 1 representative only, otherwise "This invitation is for: NAME"; shared the Master_Attendance and Final Seating headers) + Claude
 **Email (`EmailBlaster.gs`):**

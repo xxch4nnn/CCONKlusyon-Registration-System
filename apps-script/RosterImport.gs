@@ -1,8 +1,8 @@
 /**
  * CCOnklusyon Registration & Check-in System — Roster import (2026-10-01)
  *
- * Loads the "Final Seating" tab of the CCOnklusyon_2026_Seating_Plan workbook (one row per
- * registration) into Master_Attendance, so the passes, the scanner and the wall all work from the
+ * Loads the "Final Seating" tab (one row per registration; same workbook as Master_Attendance)
+ * into Master_Attendance, so the passes, the scanner and the wall all work from the
  * final list. Paste this as a NEW script file (Apps Script editor: + -> Script -> name it
  * RosterImport) next to Code.gs and EmailBlaster.gs, save, then:
  *
@@ -28,9 +28,14 @@
  * Skipped: Category "Nominee" (on hold until results), Status withdrawn/cancelled/on hold.
  */
 
-/** The seating workbook (Drive file "CCOnklusyon_2026_Seating_Plan") and its tab. */
-const SEATING_SPREADSHEET_ID = '1aATPimthXtg-uw8CNyS_v3sYMO741XIjG43h0-NzgR4';
+/**
+ * Where "Final Seating" lives. Since 2026-10-01 it is a tab in THIS workbook (CCOnklusyon Event
+ * Checklist, gid 828790481), so SEATING_SPREADSHEET_ID is blank = "the workbook this script is in"
+ * (no extra permission needed). Put a spreadsheet ID here only if the tab moves to another file.
+ */
+const SEATING_SPREADSHEET_ID = '';
 const SEATING_SHEET_NAME = 'Final Seating';
+const SEATING_SHEET_GID = 828790481; // fallback if the tab gets renamed
 
 /** The 12 attendee types, spelled exactly as the email should show them. */
 const ATTENDEE_TYPES = [
@@ -207,17 +212,27 @@ function logImportReport_(report, dryRun) {
   if (report.noRegNoRows.length) L('CHECK: ' + report.noRegNoRows.length + ' Master_Attendance row(s) did not come from Final Seating (old test rows?) — sheet rows ' + report.noRegNoRows.join(', ') + '. DELETE them before the real send, or they will get a pass too.');
 }
 
-function importFinalSeating_(dryRun) {
-  let source;
+/** The Final Seating tab: by name, else by gid, in this workbook (or SEATING_SPREADSHEET_ID if set). */
+function findSeatingSheet_() {
+  let book;
   try {
-    source = SpreadsheetApp.openById(SEATING_SPREADSHEET_ID).getSheetByName(SEATING_SHEET_NAME);
+    book = SEATING_SPREADSHEET_ID ? SpreadsheetApp.openById(SEATING_SPREADSHEET_ID) : SpreadsheetApp.getActiveSpreadsheet();
   } catch (err) {
     let who = '';
     try { who = Session.getEffectiveUser().getEmail(); } catch (e) { /* not available */ }
-    throw new Error('Could not open the seating workbook (CCOnklusyon_2026_Seating_Plan, id ' + SEATING_SPREADSHEET_ID + ')' +
-      (who ? ' as ' + who : '') + '. Make sure this Google account can open that file, then run again. (' + err.message + ')');
+    throw new Error('Could not open the spreadsheet ' + SEATING_SPREADSHEET_ID + (who ? ' as ' + who : '') +
+      '. Make sure this Google account can open it, then run again. (' + err.message + ')');
   }
-  if (!source) throw new Error('Tab "' + SEATING_SHEET_NAME + '" not found in the seating workbook.');
+  let sheet = book.getSheetByName(SEATING_SHEET_NAME);
+  if (!sheet && typeof book.getSheets === 'function') {
+    sheet = book.getSheets().filter(function (sh) { return sh.getSheetId() === SEATING_SHEET_GID; })[0] || null;
+  }
+  if (!sheet) throw new Error('No "' + SEATING_SHEET_NAME + '" tab (gid ' + SEATING_SHEET_GID + ') in this workbook. Check the tab name, then run again.');
+  return sheet;
+}
+
+function importFinalSeating_(dryRun) {
+  const source = findSeatingSheet_();
   Logger.log('Reading "' + SEATING_SHEET_NAME + '" from the seating workbook…');
   const records = readFinalSeating_(source.getDataRange().getValues());
 
