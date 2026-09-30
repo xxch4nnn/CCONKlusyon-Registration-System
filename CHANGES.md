@@ -5,6 +5,18 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Attendee types on the pass; named vs (TBA) invitations; Final Seating import
+**By:** user (12 attendee types; "(TBA)" → send 1 representative only, otherwise "This invitation is for: NAME"; shared the Master_Attendance and Final Seating headers) + Claude
+**Email (`EmailBlaster.gs`):**
+- The pass chip now shows `attendee_type` (Alumni, Club Participant, Event Staff, External Partner, Former Adviser, Guest, Plus One, Student Leaders, USeP Office, USeP Personnel, VVIP, VIP), falling back to `ticket_type` for rows without one. VVIP and VIP get the filled gold chip.
+- New "who is this for" block in the pass card, two states: a named row shows "This invitation is for:" + the full name; a `(TBA)` row (also blank/"TBA"/"To be announced") shows "One (1) representative of {club}" and "Please send 1 representative only." Same in the plain-text part, plus "Attendee type: …".
+- `sendEventPassesBetaTestVariety()`: one test pass per attendee type, plus a TBA variant, round-robined over `BETA_TEST_EMAILS`. Send options factored into `passBlastOptions_` (no behaviour change).
+**Import (`RosterImport.gs`, new file):** `importFinalSeatingPreview()` (writes nothing, logs the plan) and `importFinalSeating()` read the "Final Seating" tab of the CCOnklusyon_2026_Seating_Plan workbook (`1aATPimthXtg-uw8CNyS_v3sYMO741XIjG43h0-NzgR4`) and **upsert** Master_Attendance by registration `No.` → new `reg_no` column. Maps Category → `attendee_type` (spelling-normalised) and `ticket_type` (VVIP/VIP → VIP Pass), Full Name (blank → `(TBA)`), Email, Cluster → `org_classification`, Group/Club, Position → `designation`, Table (`—` → blank; "On duty" status → `On duty`). Skips Nominee (on hold) and withdrawn/cancelled/on-hold statuses. Never touches codes, QR URL, check-in columns, `pass_sent*` or `BATCH`; never deletes — reports rows that left the list, rows without `reg_no` (old test rows: delete before the real send), unknown categories, duplicate numbers and details changed after a pass was sent. Runs under the script lock, keeps formulas, then calls `generateCredentials()` for new rows.
+**Deviation:** the import appends the `attendee_type` / `reg_no` header cells itself (earlier rule: scripts write data, not schema) — one less manual step the day before the event. Positional `COL` columns A–M are untouched, so check-in is unaffected.
+**Verified:** `tests/email-import.test.js` (new, wired into `tests/run.js`): preview writes nothing; import/re-import (no duplicates, codes and `pass_sent` kept, change-after-send warning); both email states, chip text/colour, escaping, no leftover placeholders; variety test; real send skips no-email and already-sent rows. Whole suite green. Rendered both states at 390 px. **Not verified:** the import against the live workbook — run the preview first.
+
+---
+
 ## 2026-09-30 — Body text justified
 **By:** user. The intro paragraphs and the entry reminders use `text-align: justify` (headings, pass card, links and footer unchanged). On narrow phones some lines show wider word gaps — the usual trade-off of justified text in email.
 

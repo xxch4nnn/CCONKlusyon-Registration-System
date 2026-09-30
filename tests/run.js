@@ -87,6 +87,10 @@ if (!flag('no-gs')) {
   const r = cp.spawnSync(process.execPath, [path.join(__dirname, 'code-gs.test.js')], { encoding: 'utf8' });
   process.stdout.write(r.stdout);
   if (r.status !== 0) { failed = true; process.stderr.write(r.stderr); }
+  console.log('== EmailBlaster.gs + RosterImport.gs (mocked globals) ==');
+  const e = cp.spawnSync(process.execPath, [path.join(__dirname, 'email-import.test.js')], { encoding: 'utf8' });
+  process.stdout.write(e.stdout);
+  if (e.status !== 0) { failed = true; process.stderr.write(e.stderr); }
 }
 if (!browser) { console.error('No Edge/Chrome found — set BROWSER=<path>.'); process.exit(2); }
 

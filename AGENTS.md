@@ -64,6 +64,7 @@ Code targets the real sheet, not the idealized one.
 | K | `checkin_status` | Blank = Pending; written `"Checked-In"` on first successful scan |
 | L | `checkin_timestamp` | ISO 8601, `GMT+8` |
 | M | `checked_in_by` | Device/station id passed in the checkin payload |
+| N–R | `pass_sent`, `pass_sent_timestamp`, `BATCH`, `attendee_type`, `reg_no` | Added Sept 28–Oct 1; found by header name. See [`docs/db-schema.md`](./docs/db-schema.md). |
 
 ## API contract (per spec — do not change field names/shapes without updating this file)
 Full request/response shapes: [`docs/api-contract.md`](./docs/api-contract.md). Schema:
@@ -119,6 +120,7 @@ roster-print.html       paper failsafe roster (D-6) — root, beside the other p
 apps-script/
   Code.gs               backend gateway (paste into the workbook's bound Apps Script project)
   EmailBlaster.gs       entry-pass emails + generic blast engine
+  RosterImport.gs       Final Seating (seating workbook) -> Master_Attendance upsert, by registration No.
 docs/
   mvp-spec.md           original MVP spec (Sept 13 snapshot; deviations noted at the top)
   sprint-backlog.md     Epic/Story/Task backlog + the 5 QA gates

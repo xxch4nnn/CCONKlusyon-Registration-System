@@ -310,20 +310,70 @@ function sendCustomBlastExample() {
 // LAYER 2 — the invitation pass. Built on the generic engine above.
 // =====================================================================================
 
+// ATTENDEE TYPES (2026-10-01). Master_Attendance column `attendee_type` holds one of these (filled
+// from the Final Seating "Category" by importFinalSeating in RosterImport.gs). The pass chip shows
+// it; VVIP and VIP get the filled gold chip. ticket_type stays "VIP Pass" | "Regular Attendee"
+// because the scanner, wall and Telegram VIP alert key off it.
+const VIP_ATTENDEE_TYPES = ['VVIP', 'VIP'];
+
+/** True when the row is an unnamed slot: full_name "(TBA)", "TBA", "To be announced" or blank. */
+function isTbaName_(name) {
+  const n = String(name || '').trim();
+  return n === '' || /^\(?\s*(tba|to be announced|representative)\s*\)?\.?$/i.test(n);
+}
+
+/**
+ * Who the pass is for — the two states:
+ *   named  -> "This invitation is for:" + the full name
+ *   (TBA)  -> one (1) representative of the club/office; "Please send 1 representative only."
+ */
+function buildInviteeHtml_(row) {
+  const label = 'font-family: ' + BRAND.fontBody + '; font-size: 14px; line-height: 20px; color: ' + BRAND.ink + ';';
+  const big = 'font-family: ' + BRAND.fontDisplay + '; font-size: 20px; line-height: 28px; font-weight: 700; color: ' + BRAND.gold + '; margin-top: 4px;';
+  if (isTbaName_(row.full_name)) {
+    const group = String(row.club_name || '').trim();
+    return '<div style="' + label + '">This invitation is for:</div>' +
+      '<div style="' + big + '">One (1) representative' + (group ? ' of ' + escapeHtml_(group) : '') + '</div>' +
+      '<div style="' + label + ' margin-top: 8px; font-weight: 700; color: ' + BRAND.gold + ';">Please send 1 representative only.</div>';
+  }
+  return '<div style="' + label + '">This invitation is for:</div>' +
+    '<div style="' + big + '">' + escapeHtml_(String(row.full_name).trim()) + '</div>';
+}
+
+function buildInviteeText_(row) {
+  if (isTbaName_(row.full_name)) {
+    const group = String(row.club_name || '').trim();
+    return 'This invitation is for: One (1) representative' + (group ? ' of ' + group : '') + '\n' +
+      'Please send 1 representative only.\n';
+  }
+  return 'This invitation is for: ' + String(row.full_name).trim() + '\n';
+}
+
+/** The chip text: the attendee type when the row has one, else the old ticket type. */
+function passLabel_(row) {
+  return String(row.attendee_type || '').trim() || String(row.ticket_type || '').trim();
+}
+
+function isVipRow_(row) {
+  return VIP_ATTENDEE_TYPES.indexOf(String(row.attendee_type || '').trim()) >= 0 || row.ticket_type === 'VIP Pass';
+}
+
 /**
  * Field map for the invitation template.
- *   {{Ticket_Type}}      <- ticket_type
+ *   {{Pass_Label}}       <- attendee_type (e.g. "Club Participant", "VVIP"), falling back to ticket_type
+ *   {{Invitee_Block}}    <- "This invitation is for: NAME", or the (TBA) one-representative notice
  *   {{QR_Link}}          <- a web link to the same QR image (the "Open my QR code" fallback button)
  *   {{Attendance_Code}}  <- attendance_code
  *   {{Table_Number}}     <- table_allocation (0/blank = "To be announced")
- *   {{Tag_Bg}} / {{Tag_Text_Color}}  <- VIP = filled gold chip; Regular = outlined gold chip
+ *   {{Tag_Bg}} / {{Tag_Text_Color}}  <- VVIP/VIP = filled gold chip; everyone else = outlined gold chip
  * The QR itself is embedded (cid:qrCode), built from attendance_code — see qrImageUrl_.
  */
 function buildInvitationFieldMap_(row) {
-  const isVip = row.ticket_type === 'VIP Pass';
+  const isVip = isVipRow_(row);
   const table = row.table_allocation;
   return {
-    Ticket_Type: escapeHtml_(row.ticket_type),
+    Pass_Label: escapeHtml_(passLabel_(row)),
+    Invitee_Block: buildInviteeHtml_(row),
     QR_Link: qrImageUrl_(row.attendance_code),
     Attendance_Code: escapeHtml_(row.attendance_code),
     Table_Number: escapeHtml_(table && String(table) !== '0' ? table : 'To be announced'),
@@ -435,7 +485,13 @@ const INVITATION_HTML_TEMPLATE = `
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="${BRAND.navyDeep}" style="background-color: ${BRAND.navyDeep}; border: 2px solid ${BRAND.goldDeep}; border-radius: 24px; border-collapse: separate;">
             <tr>
               <td align="center" class="card-px" style="padding: 24px 20px 8px 20px;">
-                <span style="display:inline-block; padding: 6px 18px; background-color: {{Tag_Bg}}; border: 1px solid ${BRAND.goldDeep}; border-radius: 8px; color: {{Tag_Text_Color}}; font-family: ${BRAND.fontDisplay}; font-weight: 700; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase;">{{Ticket_Type}}</span>
+                <span style="display:inline-block; padding: 6px 18px; background-color: {{Tag_Bg}}; border: 1px solid ${BRAND.goldDeep}; border-radius: 8px; color: {{Tag_Text_Color}}; font-family: ${BRAND.fontDisplay}; font-weight: 700; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase;">{{Pass_Label}}</span>
+              </td>
+            </tr>
+            <!-- WHO THIS PASS IS FOR — built by buildInviteeHtml_ -->
+            <tr>
+              <td align="center" class="card-px" style="padding: 12px 20px 4px 20px;">
+                {{Invitee_Block}}
               </td>
             </tr>
             <tr>
@@ -497,7 +553,8 @@ function buildPassPlainText_(row) {
     'As we culminate a year of collective leadership, passion, and student initiative, we ' +
     'cannot wait to celebrate these shared milestones with you.\n\n' +
     'This is your official invitation. Your entry pass and unique attendance record:\n\n' +
-    'Ticket type: ' + row.ticket_type + '\n' +
+    buildInviteeText_(row) +
+    'Attendee type: ' + passLabel_(row) + '\n' +
     'Attendance code: ' + row.attendance_code + '\n' +
     'Table Number: ' + table + '\n' +
     'QR code (opens in your browser): ' + qrImageUrl_(row.attendance_code) + '\n\n' +
@@ -524,8 +581,11 @@ function buildPassPlainText_(row) {
  *                                 ignoring pass_sent. Use deliberately, never as a default.
  */
 function sendEventPasses(testMode, testEmailOverrides, sampleOnly, forceResend) {
-  const rows = rowsAsObjects_();
-  sendMailBlast_(rows, {
+  sendMailBlast_(rowsAsObjects_(), passBlastOptions_(testMode, testEmailOverrides, sampleOnly, forceResend));
+}
+
+function passBlastOptions_(testMode, testEmailOverrides, sampleOnly, forceResend) {
+  return {
     subject: 'Your Official Invitation & Entry Pass — CCOnklusyon 2026',
     buildHtml: buildPassHtml_,
     buildText: buildPassPlainText_,
@@ -537,7 +597,7 @@ function sendEventPasses(testMode, testEmailOverrides, sampleOnly, forceResend) 
     dispatchField: 'pass_sent',
     dispatchTsField: 'pass_sent_timestamp',
     forceResend: !!forceResend
-  });
+  };
 }
 
 /**
@@ -574,4 +634,24 @@ function sendEventPassesBetaTestFull() {
   const BETA_TEST_EMAILS = betaTestEmails_();
   if (BETA_TEST_EMAILS.length === 0) return;
   sendEventPasses(true, BETA_TEST_EMAILS, false);
+}
+
+/**
+ * One pass of EACH kind — first row of every attendee type, plus the first "(TBA)" row of each
+ * type — spread across the BETA_TEST_EMAILS inboxes. Use this to eyeball every variant of the
+ * email before the real send. Test mode: never touches pass_sent.
+ */
+function sendEventPassesBetaTestVariety() {
+  const emails = betaTestEmails_();
+  if (emails.length === 0) return;
+  const seen = {};
+  const sample = rowsAsObjects_().filter(function (r) {
+    if (!r.attendance_code) return false;
+    const key = passLabel_(r) + (isTbaName_(r.full_name) ? ' + (TBA)' : '');
+    if (seen[key]) return false;
+    seen[key] = true;
+    return true;
+  });
+  Logger.log('Variety sample (' + sample.length + '): ' + Object.keys(seen).join(' | '));
+  sendMailBlast_(sample, passBlastOptions_(true, emails, false, false));
 }

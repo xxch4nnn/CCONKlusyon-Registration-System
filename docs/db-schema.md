@@ -25,6 +25,11 @@ instead of generating it at send-time. Code targets the real sheet.
 | M | `checked_in_by` | Device/station id from the check-in payload. |
 | N | `pass_sent` | **Added 2026-09-28.** Blank = not yet dispatched; `TRUE` written by `sendEventPasses` after a successful **production** send (never by a test-mode send). `EmailBlaster.gs` skips any row where this is truthy, so re-running the blast never double-sends an invite. Add this header cell to the live sheet manually — `Code.gs`'s check-in path never reads or writes it. |
 | O | `pass_sent_timestamp` | **Added 2026-09-28.** ISO 8601 timestamp of the successful dispatch, written alongside N. |
+| P | `BATCH` | Added on the live sheet by the team (not by code); no script reads or writes it. |
+| Q | `attendee_type` | **Added 2026-10-01** by `importFinalSeating` (RosterImport.gs) from Final Seating "Category": one of Alumni, Club Participant, Event Staff, External Partner, Former Adviser, Guest, Plus One, Student Leaders, USeP Office, USeP Personnel, VVIP, VIP. Shown on the pass chip; VVIP/VIP get the gold chip. `ticket_type` (F) is derived from it (VVIP/VIP → `VIP Pass`). |
+| R | `reg_no` | **Added 2026-10-01.** Final Seating "No." — the key a re-import matches on, so updates never create duplicates or new codes. Blank = the row did not come from Final Seating (e.g. old test rows). |
+
+Columns P–R are found by **header name**, never by position, so their order doesn't matter. A `full_name` of `(TBA)` means an unnamed slot: the pass says "One (1) representative of {club_name} — Please send 1 representative only." 
 
 Tier colors (spec-locked): Gold `#B8860B` = VIP Pass, Royal Blue `#1A56DB` = Regular Attendee. The
 invitation email (`EmailBlaster.gs`) now uses the CCOnklusyon 2026 identity (royal blue/gold,
