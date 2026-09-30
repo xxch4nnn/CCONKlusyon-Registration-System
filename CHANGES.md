@@ -5,6 +5,13 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-30 — Updated Event Primer link; beta-test addresses moved to a Script property
+**By:** user (new primer file; four test addresses) + Claude
+**What:** `INFO_LINKS` Event Primer now points at Drive file `1tJN_6Ic2Q5VSVY9aUbjeWHwx90qHZNlE` (HTML list and plain text both follow). `sendEventPassesBetaTest` / `…Full` read their addresses from the Script property **`BETA_TEST_EMAILS`** (comma-separated) via `betaTestEmails_()` instead of an array in the file — the repo is public (no real emails committed), and a property survives re-pasting the file from GitHub. No property → logs how to add it and sends nothing.
+**Flagged, not changed:** all five General Information files are shared "Anyone with the link — **Editor**"; they go to every attendee, so they should be Viewer.
+
+---
+
 ## 2026-09-30 — Invitation email: banner and QR embedded (missing on phones); sizes checked against a mobile email spec
 **By:** user (testers' phones showed no banner and no QR while laptops did; supplied a recommended-sizes table) + Claude
 **Finding:** both images were *linked* (banner from `raw.githubusercontent.com`, QR from `api.qrserver.com`). Both URLs were re-checked and serve valid images, so this was not a broken link: the phones simply didn't load linked images (Gmail app "Ask before displaying external images", data saver, weak signal, or a mail app that blocks remote content). The same risk applies at the venue door. Also noted: the Sept 28 test sends (6:45 and 7:20 PM) went out *before* the readability fix, so testers also saw the older serif text.

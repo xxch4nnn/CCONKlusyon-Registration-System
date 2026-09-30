@@ -357,7 +357,7 @@ function buildPassInlineImages_(row) {
 // GENERAL INFORMATION LINKS — edit labels/URLs here only; the HTML list and the plain-text
 // fallback are both built from this array.
 const INFO_LINKS = [
-  { label: 'Event Primer', url: 'https://drive.google.com/file/d/1iCvxOK48xs3Mf256j8repRMAr-YAkyGA/view' },
+  { label: 'Event Primer', url: 'https://drive.google.com/file/d/1tJN_6Ic2Q5VSVY9aUbjeWHwx90qHZNlE/view' },
   { label: 'General Information Sheet (Pamphlet/Flyer)', url: 'https://drive.google.com/file/d/1XmiJNZ11EJT_baw1ua7aCif8HprLSsRx/view' },
   { label: 'Seating Plan', url: 'https://drive.google.com/file/d/11KPVqMhvX11ql7gRo7mmo-Tb3kv6WQ6F/view' },
   { label: 'Floor Plan (3D)', url: 'https://drive.google.com/file/d/1k-MicOsWupFw-llJW3Y4V0c6IZ4SjjHR/view' },
@@ -516,17 +516,28 @@ function sendEventPasses(testMode, testEmailOverrides, sampleOnly, forceResend) 
 }
 
 /**
+ * Test addresses live in the Script property BETA_TEST_EMAILS (comma-separated), NOT in this
+ * file: the repo is public, and a property also survives re-pasting this file from GitHub.
+ * Set it once: Apps Script -> Project Settings -> Script properties -> Add script property.
+ */
+function betaTestEmails_() {
+  const raw = PropertiesService.getScriptProperties().getProperty('BETA_TEST_EMAILS') || '';
+  const list = raw.split(/[\s,;]+/).filter(function (e) { return e.indexOf('@') > 0; });
+  if (list.length === 0) {
+    Logger.log('No test addresses: add the Script property BETA_TEST_EMAILS (comma-separated) under Project Settings, then run again.');
+  } else {
+    Logger.log('Test addresses: ' + list.join(', '));
+  }
+  return list;
+}
+
+/**
  * Default beta check: ONE pass per test address (first N rows). Test mode never reads or writes
- * pass_sent. Edit the array, then Run.
+ * pass_sent. Addresses come from the BETA_TEST_EMAILS Script property (see betaTestEmails_).
  */
 function sendEventPassesBetaTest() {
-  const BETA_TEST_EMAILS = [
-    // <-- put 3-5 real test addresses here across Gmail/Outlook/Yahoo before running
-  ];
-  if (BETA_TEST_EMAILS.length === 0) {
-    Logger.log('Add at least one address to BETA_TEST_EMAILS before running.');
-    return;
-  }
+  const BETA_TEST_EMAILS = betaTestEmails_();
+  if (BETA_TEST_EMAILS.length === 0) return;
   sendEventPasses(true, BETA_TEST_EMAILS, true);
 }
 
@@ -535,12 +546,7 @@ function sendEventPassesBetaTest() {
  * several passes for different attendees, by design). Use only to eyeball every row's rendering.
  */
 function sendEventPassesBetaTestFull() {
-  const BETA_TEST_EMAILS = [
-    // <-- put 3-5 real test addresses here across Gmail/Outlook/Yahoo before running
-  ];
-  if (BETA_TEST_EMAILS.length === 0) {
-    Logger.log('Add at least one address to BETA_TEST_EMAILS before running.');
-    return;
-  }
+  const BETA_TEST_EMAILS = betaTestEmails_();
+  if (BETA_TEST_EMAILS.length === 0) return;
   sendEventPasses(true, BETA_TEST_EMAILS, false);
 }
