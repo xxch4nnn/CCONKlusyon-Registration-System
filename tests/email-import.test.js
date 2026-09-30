@@ -35,7 +35,7 @@ function world(maRows, seatRows, opts = {}) {
       flush() {}
     },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
-    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'BETA_TEST_EMAILS' ? 't1@x.test, t2@x.test' : null), setProperty() {} }) },
+    PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'BETA_TEST_EMAILS' ? (opts.testEmails || 't1@x.test, t2@x.test') : null), setProperty() {} }) },
     MailApp: { getRemainingDailyQuota: () => 100, sendEmail: m => sent.push(m) },
     Utilities: { sleep() {}, formatDate: () => '2026-10-01T19:00:00+08:00', getUuid: () => 'u' },
     UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getHeaders: () => ({ 'Content-Type': 'image/png' }), getBlob: () => ({ setName() { return this; } }) }) },
@@ -115,13 +115,46 @@ ok('email escapes names', /Dr\. Ana Example/.test(html(254)) && !/<script/.test(
 w.sent.length = 0;
 w.run('sendEventPassesBetaTestVariety()');
 const variety = w.sent.map(m => (m.htmlBody.match(/text-transform: uppercase;">([^<]+)<\/span>/) || [])[1] + (/representative only/.test(m.htmlBody) ? '+TBA' : ''));
-ok('variety test: one pass per type + a TBA variant, only to test inboxes', w.sent.length >= 5 && w.sent.every(m => /^t\d@x\.test$/.test(m.to) && /^\[TEST\]/.test(m.subject)) && variety.includes('Club Participant+TBA') && variety.includes('Club Participant'), variety.join(' | '));
+ok('variety test: one pass per type + a TBA variant, only to test inboxes', w.sent.length >= 5 && w.sent.every(m => /^t\d@x\.test$/.test(m.to) && /^\[TEST SAMPLE\]/.test(m.subject)) && variety.includes('Club Participant+TBA') && variety.includes('Club Participant'), variety.join(' | '));
+const realCodes = w.rowsAsObjects().map(r => String(r.attendance_code)).filter(Boolean);
+const realNames = w.rowsAsObjects().map(r => String(r.full_name)).filter(n => n && n !== '(TBA)');
+ok('variety test: no real attendee name or working code in any email', w.sent.every(m => realCodes.every(c => !m.htmlBody.includes(c) && !m.body.includes(c)) && realNames.every(n => !m.htmlBody.includes(n))));
+ok('variety test: every pass says SAMPLE and uses code 00000', w.sent.every(m => /SAMPLE PASS/.test(m.htmlBody) && />00000</.test(m.htmlBody) && /^SAMPLE PASS/.test(m.body)));
 ok('variety test: does not stamp pass_sent', w.rowsAsObjects().filter(r => r.pass_sent === true).length === 1);
 
 // ---------- 6. real send skips a row with no email (on-duty TBA) ----------
 w.sent.length = 0;
-w.run('sendEventPasses()');
+w.run('sendEventPassesLIVE()');
 ok('real send: rows without email skipped; already-sent row skipped', !w.sent.some(m => /Marshal/.test(m.htmlBody)) && !w.sent.some(m => m.to === 'ben@x.test') && w.sent.some(m => m.to === 'club@x.test'));
+
+// ---------- 7. the reported bug: test address must get ITS OWN pass ----------
+// Sheet order: Sual, Mandin, Gabales, Genobisa, Gabutero. Test addresses: Sual, Mandin, Gabales, Gabutero.
+// Before the fix, the 4th address (Gabutero) received the 4th ROW (Genobisa) — someone else's pass.
+const PEOPLE = [['sual@x.test', 'John Sual', '11111'], ['mandin@x.test', 'Josh Mandin', '22222'], ['gabales@x.test', 'Irene Gabales', '33333'],
+  ['genobisa@x.test', 'Nathalie Genobisa', '44444'], ['gabutero@x.test', 'Benjamin Gabutero', '55555'], ['office@x.test', 'Guest One', '66666'], ['office@x.test', 'Guest Two', '77777']]
+  .map(([email, full_name, attendance_code]) => ({ email, full_name, attendance_code, ticket_type: 'Regular Attendee', club_name: 'CCO' }));
+const w7 = world(PEOPLE, [], { testEmails: 'sual@x.test, mandin@x.test, gabales@x.test, GABUTERO@x.test , office@x.test, stranger@x.test' });
+w7.run('sendEventPassesBetaTest()');
+const to = a => w7.sent.filter(m => m.to.toLowerCase() === a);
+ok('bug repro: Gabutero gets HIS pass (55555), not Genobisa\'s', to('gabutero@x.test').length === 1 && /Benjamin Gabutero/.test(to('gabutero@x.test')[0].htmlBody) && />55555</.test(to('gabutero@x.test')[0].htmlBody) && !w7.sent.some(m => /Genobisa|44444/.test(m.htmlBody)));
+ok('own pass: every matched address gets exactly its own row', ['sual', 'mandin', 'gabales'].every((n, i) => to(n + '@x.test').length === 1 && to(n + '@x.test')[0].htmlBody.includes(PEOPLE[i].full_name)));
+ok('shared address gets every pass the live send would send it (2)', to('office@x.test').length === 2 && /Guest One/.test(to('office@x.test')[0].htmlBody) && /Guest Two/.test(to('office@x.test')[1].htmlBody));
+ok('address not in the list gets a [TEST SAMPLE] with code 00000, no real data', to('stranger@x.test').length === 1 && /^\[TEST SAMPLE\]/.test(to('stranger@x.test')[0].subject) && />00000</.test(to('stranger@x.test')[0].htmlBody) && !PEOPLE.some(p => to('stranger@x.test')[0].htmlBody.includes(p.full_name)));
+ok('own passes use "[TEST]" (not SAMPLE) and carry no sample notice', to('sual@x.test')[0].subject.startsWith('[TEST] ') && !/SAMPLE PASS/.test(to('sual@x.test')[0].htmlBody));
+ok('test send never emails a non-test address', w7.sent.every(m => /^(sual|mandin|gabales|gabutero|office|stranger)@x\.test$/i.test(m.to)));
+ok('execution log shows who got what', w7.logs.some(l => /TEST PLAN: GABUTERO@x\.test <- their own pass: Benjamin Gabutero/.test(l)) && w7.logs.some(l => /TEST PLAN: stranger@x\.test <- SAMPLE/.test(l)));
+ok('no pass_sent written by the test', w7.ma.values.slice(1).every(r => r[13] === '' || r[13] === undefined));
+
+// ---------- 8. custom blast test mode pairs by email too ----------
+w7.sent.length = 0;
+w7.run("sendCustomBlast('Update', '<p>Hi {{full_name}}, code {{attendance_code}}</p>', 'Hi {{full_name}}', true, ['gabutero@x.test', 'stranger@x.test'])");
+ok('custom blast test: own merge for a listed address, sample for an unlisted one', w7.sent.length === 2 && /Benjamin Gabutero, code 55555/.test(w7.sent[0].htmlBody) && /Sample Attendee, code 00000/.test(w7.sent[1].htmlBody) && /^\[TEST SAMPLE\]/.test(w7.sent[1].subject));
+
+// ---------- 9. Run-dropdown safety ----------
+ok('the only visible pass function that emails attendees is sendEventPassesLIVE', typeof w7.ctx.sendEventPasses === 'undefined' && typeof w7.ctx.sendEventPassesBetaTestFull === 'undefined' && typeof w7.ctx.sendEventPassesLIVE === 'function');
+w7.sent.length = 0;
+w7.run('sendEventPassesLIVE()');
+ok('LIVE: every row to its own email, stamped', w7.sent.length === 7 && PEOPLE.every((p, i) => w7.sent[i].to === p.email && w7.sent[i].htmlBody.includes(p.full_name) && w7.sent[i].htmlBody.includes('>' + p.attendance_code + '<')) && w7.ma.values.slice(1).every(r => r[13] === true));
 
 console.log(fail ? '\nSOME FAILED' : '\nALL PASS');
 process.exitCode = fail ? 1 : 0;

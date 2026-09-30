@@ -27,10 +27,11 @@
  *   O  pass_sent_timestamp  blank or the send time, GMT+8 (e.g. 2026-09-30T19:05:12+08:00)
  * See docs/db-schema.md and CHANGES.md (2026-09-28) for why. `sendEventPasses` skips any row
  * where `pass_sent` is already TRUE and stamps both columns right after each successful REAL send
+ * (the real send is `sendEventPassesLIVE`)
  * (flushed to the sheet immediately). A real send refuses to start if either header is missing.
- * Test-mode sends (sendEventPassesBetaTest/Full) never read or write these columns: a test pass
- * goes to a test inbox, not to that attendee, so marking the row "sent" would be false AND would
- * make the real run skip that person. Test sends are listed in the run's Execution log instead.
+ * Test sends (sendEventPassesBetaTest / sendEventPassesBetaTestVariety) never read or write these
+ * columns. A test address only ever receives its OWN pass, or a clearly marked SAMPLE pass with the
+ * unusable code 00000 — never another attendee's pass (fixed 2026-10-01; see pairTestAddresses_).
  */
 
 const SENDER_NAME = 'CCO CCOnklusyon 2026';
@@ -142,11 +143,16 @@ function escapeHtml_(s) {
  *   buildHtml        function(row) -> html string
  *   buildText        function(row) -> plain-text string (compulsory anti-spam fallback)
  *   requiredFields   array of row keys that must be truthy, else the row is skipped
- *   testMode         true -> ignores each row's real email, sends to testEmailOverrides instead
+ *   testMode         true -> only the testEmailOverrides addresses receive anything, "[TEST]" subject,
+ *                    and pass_sent is never read or written. Each test address gets EXACTLY what the
+ *                    real send would give it: the email of every row whose `email` is that address —
+ *                    never another attendee's. An address that isn't in the list gets a "[TEST SAMPLE]"
+ *                    built by sampleRowFor (fictional name, code 00000), or nothing if there is none.
+ *                    (Until 2026-10-01 test mode paired rows and addresses BY POSITION, so a tester
+ *                    could receive someone else's pass and working QR code.)
  *   testEmailOverrides  array of addresses, used only when testMode is true
- *   sampleOnly       (test mode only) true = each test address gets exactly ONE row's pass
- *                     (first N rows where N = testEmailOverrides.length) instead of every row
- *                     round-robined across the test addresses. Default true.
+ *   sampleRowFor     (test mode, optional) function(address) -> a fictional row marked _sample: true
+ *   testTargets      (test mode, optional) explicit [{row, to}] list — used by the variety test
  *   throttleMs       ms to sleep between sends (default 2000 = 1 send / 2s)
  *   maxRunMs         stop sending after this long (default 5 min, under Apps Script's ~6 min cap)
  *   dispatchField    (optional) header name used for duplicate-send protection, e.g. 'pass_sent'.
@@ -183,18 +189,15 @@ function sendMailBlast_(rows, opts) {
   const startedAt = Date.now();
   let stopped = false;
 
-  let targetRows = rows;
-  if (opts.testMode && opts.sampleOnly !== false) {
-    targetRows = rows.slice(0, opts.testEmailOverrides.length);
-    Logger.log('sampleOnly: sending ' + targetRows.length + ' row(s), one per test address (no round-robin).');
-  }
+  // WHO GETS WHAT. Real send: every row goes to that row's own email. Test send: see testMode above.
+  const targets = !opts.testMode ? rows.map(function (r) { return { row: r, to: r.email }; })
+    : (opts.testTargets || pairTestAddresses_(rows, opts.testEmailOverrides || [], opts.sampleRowFor));
 
   let sent = 0, skipped = 0, alreadyDispatched = 0;
 
-  targetRows.forEach(function (row, idx) {
-    const targetEmail = opts.testMode
-      ? opts.testEmailOverrides[idx % opts.testEmailOverrides.length]
-      : row.email;
+  targets.forEach(function (target) {
+    const row = target.row;
+    const targetEmail = target.to;
 
     if (!targetEmail) {
       Logger.log('SKIP (no email): ' + row.full_name);
@@ -238,7 +241,7 @@ function sendMailBlast_(rows, opts) {
     }
 
     const subject = typeof opts.subject === 'function' ? opts.subject(row) : opts.subject;
-    const finalSubject = opts.testMode ? '[TEST] ' + subject : subject;
+    const finalSubject = opts.testMode ? (row._sample ? '[TEST SAMPLE] ' : '[TEST] ') + subject : subject;
 
     const message = {
       to: targetEmail,
@@ -263,6 +266,47 @@ function sendMailBlast_(rows, opts) {
     (trackDispatch ? ', Already dispatched (skipped): ' + alreadyDispatched : ''));
 }
 
+function normEmail_(e) { return String(e || '').trim().toLowerCase(); }
+
+/**
+ * Test-mode pairing: for each test address, the rows the REAL send would email to that address
+ * (matched on `email`, case-insensitive). No match -> a SAMPLE row if sampleRowFor can build one.
+ * Logs the plan, so the Execution log shows exactly who got what.
+ */
+function pairTestAddresses_(rows, addresses, sampleRowFor) {
+  const targets = [];
+  addresses.forEach(function (addr) {
+    const own = rows.filter(function (r) { return normEmail_(r.email) === normEmail_(addr); });
+    if (own.length) {
+      own.forEach(function (r) { targets.push({ row: r, to: addr }); });
+      Logger.log('TEST PLAN: ' + addr + ' <- their own pass' + (own.length > 1 ? 'es (' + own.length + ' rows share this address)' : '') + ': ' +
+        own.map(function (r) { return r.full_name; }).join(', '));
+      return;
+    }
+    const sample = sampleRowFor ? sampleRowFor(addr) : null;
+    if (sample) {
+      targets.push({ row: sample, to: addr });
+      Logger.log('TEST PLAN: ' + addr + ' <- SAMPLE pass (this address is not in Master_Attendance; code 00000 will not work at the door)');
+    } else {
+      Logger.log('TEST PLAN: ' + addr + ' <- nothing (not in Master_Attendance)');
+    }
+  });
+  return targets;
+}
+
+/** Placeholder code on SAMPLE passes. Real codes are 10000-99999, so this never checks anyone in. */
+const SAMPLE_CODE = '00000';
+
+/** A fictional row for a custom-blast test: every column filled, clearly marked as a sample. */
+function sampleRowGeneric_(rows, addr) {
+  const row = { _sample: true };
+  Object.keys(rows[0] || {}).forEach(function (k) { if (k !== '_rowIndex') row[k] = 'Sample'; });
+  row.email = addr;
+  row.full_name = 'Sample Attendee';
+  row.attendance_code = SAMPLE_CODE;
+  return row;
+}
+
 /**
  * Send ANY custom HTML/plain-text blast to some or all attendees. Templates use {{header_name}}
  * placeholders matching real Master_Attendance columns exactly.
@@ -274,9 +318,10 @@ function sendMailBlast_(rows, opts) {
  *
  * @param {function} [rowFilter]  optional function(row) -> boolean, e.g. row => row.ticket_type === 'VIP Pass'
  */
-function sendCustomBlast(subjectText, htmlTemplateText, plainTextTemplateText, testMode, testEmailOverrides, rowFilter, sampleOnly) {
+function sendCustomBlast(subjectText, htmlTemplateText, plainTextTemplateText, testMode, testEmailOverrides, rowFilter) {
   let rows = rowsAsObjects_();
   if (typeof rowFilter === 'function') rows = rows.filter(rowFilter);
+  const allRows = rows;
 
   sendMailBlast_(rows, {
     subject: subjectText,
@@ -285,7 +330,7 @@ function sendCustomBlast(subjectText, htmlTemplateText, plainTextTemplateText, t
     requiredFields: [],
     testMode: !!testMode,
     testEmailOverrides: testEmailOverrides || [],
-    sampleOnly: sampleOnly !== false
+    sampleRowFor: function (addr) { return sampleRowGeneric_(allRows, addr); }
     // No dispatchField on purpose: an announcement isn't the invite and must not touch pass_sent.
   });
 }
@@ -378,7 +423,35 @@ function buildInvitationFieldMap_(row) {
     Attendance_Code: escapeHtml_(row.attendance_code),
     Table_Number: escapeHtml_(table && String(table) !== '0' ? table : 'To be announced'),
     Tag_Bg: isVip ? BRAND.goldMid : 'transparent',
-    Tag_Text_Color: isVip ? BRAND.onAccent : BRAND.gold
+    Tag_Text_Color: isVip ? BRAND.onAccent : BRAND.gold,
+    Sample_Notice: row._sample ? SAMPLE_NOTICE_HTML_ : ''
+  };
+}
+
+/** Shown on top of the card on SAMPLE passes only (test sends to addresses not in the list). */
+const SAMPLE_NOTICE_HTML_ = '<tr><td align="center" style="padding: 20px 20px 0 20px;">' +
+  '<div style="border: 2px dashed ' + BRAND.gold + '; border-radius: 12px; padding: 10px 14px; font-family: ' + BRAND.fontBody +
+  '; font-size: 14px; line-height: 20px; font-weight: 700; color: ' + BRAND.gold + ';">SAMPLE PASS — for checking the design only.<br>' +
+  'This QR code and attendance code will not work at the door.</div></td></tr>';
+
+/**
+ * A fictional pass row for a test send: the attendee type, club and table (and the "(TBA)" state)
+ * of `base` if given, but a made-up name and the unusable code 00000 — so a tester can check how a
+ * pass looks without ever receiving a real attendee's name or working QR code.
+ */
+function samplePassRow_(addr, base) {
+  base = base || {};
+  const type = String(base.attendee_type || '').trim() || 'Club Participant';
+  const tba = String(base.full_name || '').trim() !== '' && isTbaName_(base.full_name);
+  return {
+    _sample: true,
+    email: addr,
+    full_name: tba ? '(TBA)' : 'Sample Attendee',
+    attendee_type: type,
+    ticket_type: VIP_ATTENDEE_TYPES.indexOf(type) >= 0 ? 'VIP Pass' : 'Regular Attendee',
+    club_name: base.club_name || 'Council of Clubs and Organizations',
+    table_allocation: base.table_allocation || '7',
+    attendance_code: SAMPLE_CODE
   };
 }
 
@@ -483,6 +556,7 @@ const INVITATION_HTML_TEMPLATE = `
       <tr>
         <td class="px" style="padding: 16px 30px 8px 30px;">
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="${BRAND.navyDeep}" style="background-color: ${BRAND.navyDeep}; border: 2px solid ${BRAND.goldDeep}; border-radius: 24px; border-collapse: separate;">
+            {{Sample_Notice}}
             <tr>
               <td align="center" class="card-px" style="padding: 24px 20px 8px 20px;">
                 <span style="display:inline-block; padding: 6px 18px; background-color: {{Tag_Bg}}; border: 1px solid ${BRAND.goldDeep}; border-radius: 8px; color: {{Tag_Text_Color}}; font-family: ${BRAND.fontDisplay}; font-weight: 700; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase;">{{Pass_Label}}</span>
@@ -548,7 +622,8 @@ function buildPassHtml_(row) {
 /** Compulsory plain-text fallback (spec requirement — anti-spam). */
 function buildPassPlainText_(row) {
   const table = row.table_allocation && String(row.table_allocation) !== '0' ? row.table_allocation : 'To be announced';
-  return 'Greetings in the name of genuine student service!\n\n' +
+  return (row._sample ? 'SAMPLE PASS — for checking the design only. This QR code and attendance code will not work at the door.\n\n' : '') +
+    'Greetings in the name of genuine student service!\n\n' +
     'We are thrilled to officially welcome you to CCOnklusyon 2026: The Legacy CContinues! ' +
     'As we culminate a year of collective leadership, passion, and student initiative, we ' +
     'cannot wait to celebrate these shared milestones with you.\n\n' +
@@ -580,11 +655,21 @@ function buildPassPlainText_(row) {
  * @param {boolean} [forceResend]  production only, default false — re-send and re-stamp everyone,
  *                                 ignoring pass_sent. Use deliberately, never as a default.
  */
-function sendEventPasses(testMode, testEmailOverrides, sampleOnly, forceResend) {
-  sendMailBlast_(rowsAsObjects_(), passBlastOptions_(testMode, testEmailOverrides, sampleOnly, forceResend));
+/**
+ * THE REAL SEND — emails every attendee their own pass and stamps pass_sent / pass_sent_timestamp.
+ * Named in capitals on purpose: it is the only function in the Run dropdown that emails attendees.
+ * Rows already marked pass_sent are skipped, so running it again only sends to the rest.
+ */
+function sendEventPassesLIVE() {
+  sendEventPasses_(false, [], false);
 }
 
-function passBlastOptions_(testMode, testEmailOverrides, sampleOnly, forceResend) {
+/** Shared by the live send and the tests. Underscore = hidden from the Run dropdown. */
+function sendEventPasses_(testMode, testEmailOverrides, forceResend) {
+  sendMailBlast_(rowsAsObjects_(), passBlastOptions_(testMode, testEmailOverrides, forceResend));
+}
+
+function passBlastOptions_(testMode, testEmailOverrides, forceResend) {
   return {
     subject: 'Your Official Invitation & Entry Pass — CCOnklusyon 2026',
     buildHtml: buildPassHtml_,
@@ -593,7 +678,7 @@ function passBlastOptions_(testMode, testEmailOverrides, sampleOnly, forceResend
     requiredFields: ['attendance_code'],
     testMode: !!testMode,
     testEmailOverrides: testEmailOverrides || [],
-    sampleOnly: sampleOnly !== false,
+    sampleRowFor: function (addr) { return samplePassRow_(addr); },
     dispatchField: 'pass_sent',
     dispatchTsField: 'pass_sent_timestamp',
     forceResend: !!forceResend
@@ -617,41 +702,37 @@ function betaTestEmails_() {
 }
 
 /**
- * Default beta check: ONE pass per test address (first N rows). Test mode never reads or writes
- * pass_sent. Addresses come from the BETA_TEST_EMAILS Script property (see betaTestEmails_).
+ * Test send: each BETA_TEST_EMAILS address receives exactly what the live send would send it —
+ * its OWN pass (every row whose email is that address), with "[TEST]" in the subject. An address
+ * that isn't in Master_Attendance gets a "[TEST SAMPLE]" pass (fictional name, code 00000).
+ * Never sends one attendee's pass to someone else. Never reads or writes pass_sent.
  */
 function sendEventPassesBetaTest() {
-  const BETA_TEST_EMAILS = betaTestEmails_();
-  if (BETA_TEST_EMAILS.length === 0) return;
-  sendEventPasses(true, BETA_TEST_EMAILS, true);
+  const emails = betaTestEmails_();
+  if (emails.length === 0) return;
+  sendEventPasses_(true, emails, false);
 }
 
 /**
- * Thorough variant: round-robins EVERY row across the test addresses (each test inbox receives
- * several passes for different attendees, by design). Use only to eyeball every row's rendering.
- */
-function sendEventPassesBetaTestFull() {
-  const BETA_TEST_EMAILS = betaTestEmails_();
-  if (BETA_TEST_EMAILS.length === 0) return;
-  sendEventPasses(true, BETA_TEST_EMAILS, false);
-}
-
-/**
- * One pass of EACH kind — first row of every attendee type, plus the first "(TBA)" row of each
- * type — spread across the BETA_TEST_EMAILS inboxes. Use this to eyeball every variant of the
- * email before the real send. Test mode: never touches pass_sent.
+ * Design check of every variant: one SAMPLE pass per attendee type in the list, plus a "(TBA)"
+ * version, spread across the BETA_TEST_EMAILS inboxes. Each shows that type's chip, club and table
+ * but a made-up name and the unusable code 00000 — no real attendee's pass is sent.
  */
 function sendEventPassesBetaTestVariety() {
   const emails = betaTestEmails_();
   if (emails.length === 0) return;
   const seen = {};
-  const sample = rowsAsObjects_().filter(function (r) {
-    if (!r.attendance_code) return false;
+  const bases = rowsAsObjects_().filter(function (r) {
     const key = passLabel_(r) + (isTbaName_(r.full_name) ? ' + (TBA)' : '');
-    if (seen[key]) return false;
+    if (!passLabel_(r) || seen[key]) return false;
     seen[key] = true;
     return true;
   });
-  Logger.log('Variety sample (' + sample.length + '): ' + Object.keys(seen).join(' | '));
-  sendMailBlast_(sample, passBlastOptions_(true, emails, false, false));
+  const targets = bases.map(function (base, i) {
+    return { row: samplePassRow_(emails[i % emails.length], base), to: emails[i % emails.length] };
+  });
+  Logger.log('Variety test: ' + targets.length + ' SAMPLE pass(es): ' + Object.keys(seen).join(' | '));
+  const opts = passBlastOptions_(true, emails, false);
+  opts.testTargets = targets;
+  sendMailBlast_([], opts);
 }

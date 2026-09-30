@@ -5,6 +5,18 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Test sends went to the wrong person: fixed at the root (match by email)
+**By:** user (a test send to Benjamin Gabutero delivered Nathalie Genobisa's pass; "revisit the codebase") + Claude
+**Cause:** test mode paired rows and test addresses **by position** — row 1 → address 1, row 2 → address 2… Rows 1–3 happened to belong to the first three test addresses; row 4 was Genobisa, address 4 was Gabutero. This is the same class of bug reported on Sept 19 (one inbox receiving several attendees' passes); `sampleOnly` then only reduced it to one pass per inbox, still by position. Consequence beyond confusion: a working attendance code/QR went to another person (Genobisa's code 66519 to Gabutero). It dies when the test rows are deleted and the list is imported with fresh codes.
+**Fix (`EmailBlaster.gs`):**
+- **Rule: a test address only ever receives what the real send would send it.** `pairTestAddresses_` matches each `BETA_TEST_EMAILS` address to the row(s) with that `email` (case/space-insensitive) and sends their own pass(es) with "[TEST]". An address not in the list gets a **"[TEST SAMPLE]"** pass: made-up name, code **00000** (real codes are 10000–99999, so it can't check anyone in) and a dashed "SAMPLE PASS — will not work at the door" notice. The Execution log prints a `TEST PLAN:` line per address. `sendCustomBlast` test mode uses the same pairing.
+- `sendEventPassesBetaTestVariety` now sends only SAMPLE passes (each type's chip/club/table and the TBA state, never a real name or code).
+- **Removed `sendEventPassesBetaTestFull`** — it round-robined *every* row's real pass into the test inboxes (327 working codes after the import).
+- **Run-dropdown safety:** `sendEventPasses` is now the hidden `sendEventPasses_`; the real send is **`sendEventPassesLIVE()`** — the only visible function that emails attendees (running the old name with no arguments emailed everyone). `sampleOnly` removed.
+**Verified:** `tests/email-import.test.js` reproduces the report (sheet order Sual, Mandin, Gabales, Genobisa, Gabutero; Gabutero must get 55555 and nothing of Genobisa's) plus shared addresses, unlisted → sample, custom-blast pairing, no pass_sent in tests, LIVE unchanged. Mutation-checked: restoring positional pairing fails 5 tests. Full suite green.
+
+---
+
 ## 2026-10-01 — Import reads Final Seating from the same workbook
 **By:** user (Final Seating is now a tab in the CCOnklusyon Event Checklist workbook, gid 828790481; the first preview run failed with "An unknown error has occurred" while opening the separate seating file from an Incognito window). `SEATING_SPREADSHEET_ID` is now blank = this workbook, so no cross-file permission is needed; the tab is found by name, or by gid 828790481 if renamed; a clear error names the tab if it's missing.
 
