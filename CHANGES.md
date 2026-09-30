@@ -5,6 +5,15 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Live send survives a bad address; stops if it can't record
+**By:** Claude (pre-send review, user about to run the real send)
+**Found:** `MailApp.sendEmail` throws on a malformed address ("N/A", a typo). The loop didn't catch it, so the run died at that row — and every re-run died at the same row, blocking everyone listed after it. Also: if writing `pass_sent` failed (protected range, strict validation), the email had gone out unrecorded and the run crashed.
+**Now:** a send error on one row is logged `FAILED (reason): Name <address>`, the row stays unmarked (a later run retries it once the address is fixed) and the run continues. A Gmail quota/limit error stops the run cleanly instead of failing every remaining row. If `pass_sent` can't be written, the run stops right after that email with instructions (tick it by hand, fix the column). Summary line now reports `Failed:`.
+**Also found while checking the live sheet (read-only):** `Master_Attendance` had only its header row (test rows deleted, import not yet run) and cell N1 no longer read `pass_sent` (shown as "Column 14") — the live send refuses to start until it's restored.
+**Verified:** tests for a bad address mid-list, a quota error, and a stamp failure; full suite green.
+
+---
+
 ## 2026-10-01 — Updated Seating Plan and Flyer links
 **By:** user. `INFO_LINKS`: "General Information Sheet (Pamphlet/Flyer)" → Drive file `1jnWHG-kHZuoEF9rYWLxgd-F2TE8CeMZs`; "Seating Plan" → `1U2gYQyopdGnAFLLYB6dkr6rGKrB8DBXm` (replaces the one set earlier today). HTML list and plain text both follow. Flagged, not changed: both files are shared "Anyone with the link — Editor".
 

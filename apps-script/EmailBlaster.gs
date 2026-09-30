@@ -194,7 +194,7 @@ function sendMailBlast_(rows, opts) {
   const targets = !opts.testMode ? rows.map(function (r) { return { row: r, to: r.email }; })
     : (opts.testTargets || pairTestAddresses_(rows, opts.testEmailOverrides || [], opts.sampleRowFor));
 
-  let sent = 0, skipped = 0, alreadyDispatched = 0;
+  let sent = 0, skipped = 0, alreadyDispatched = 0, failed = 0;
 
   targets.forEach(function (target) {
     const row = target.row;
@@ -252,10 +252,34 @@ function sendMailBlast_(rows, opts) {
       name: SENDER_NAME
     };
     if (inlineImages) message.inlineImages = inlineImages;
-    MailApp.sendEmail(message);
+    try {
+      MailApp.sendEmail(message);
+    } catch (err) {
+      // Quota/limit errors: every later send would fail too, so stop. Anything else (a malformed
+      // address, "N/A", a stray character) is that row's problem: log it, leave it unmarked so a
+      // later run retries it once the address is fixed, and carry on with everyone else.
+      if (/too many times|quota|limit exceeded/i.test(err.message)) {
+        Logger.log('STOP: Gmail refused to send more today (' + err.message + ') after ' + sent + ' sends. Run again tomorrow.');
+        stopped = true;
+        return;
+      }
+      Logger.log('FAILED (' + err.message + '): ' + row.full_name + ' <' + targetEmail + '> — not marked sent; fix the address in Master_Attendance, then run again.');
+      failed++;
+      return;
+    }
 
     if (trackDispatch) {
-      markDispatched_(sheetCtx.headers, sheetCtx.sheet, row._rowIndex, opts.dispatchField, opts.dispatchTsField);
+      try {
+        markDispatched_(sheetCtx.headers, sheetCtx.sheet, row._rowIndex, opts.dispatchField, opts.dispatchTsField);
+      } catch (err) {
+        // The email went out but could not be recorded. Stop rather than keep sending unrecorded
+        // passes (a re-run would email all of them again).
+        Logger.log('STOP: sent to ' + row.full_name + ' <' + targetEmail + '> but could NOT write pass_sent (' + err.message +
+          '). Tick that row by hand, fix the column (protected range? data validation?), then run again.');
+        sent++;
+        stopped = true;
+        return;
+      }
     }
 
     Logger.log((opts.testMode ? '[TEST] ' : '') + 'Sent to ' + targetEmail + ' for ' + row.full_name);
@@ -263,8 +287,9 @@ function sendMailBlast_(rows, opts) {
     Utilities.sleep(throttleMs);
   });
 
-  Logger.log('Done. Sent: ' + sent + ', Skipped: ' + skipped +
-    (trackDispatch ? ', Already dispatched (skipped): ' + alreadyDispatched : ''));
+  Logger.log((stopped ? 'Stopped early. ' : 'Done. ') + 'Sent: ' + sent + ', Skipped: ' + skipped + ', Failed: ' + failed +
+    (trackDispatch ? ', Already sent (skipped): ' + alreadyDispatched : '') +
+    (failed ? ' — search the log for FAILED.' : ''));
 }
 
 function normEmail_(e) { return String(e || '').trim().toLowerCase(); }

@@ -15,7 +15,7 @@ function world(maRows, seatRows, opts = {}) {
   const maSheet = {
     getDataRange: () => ({ getValues: () => ma.values.map(r => r.slice()), getFormulas: () => ma.values.map(r => r.map(() => '')) }),
     getRange: (r, c, nr, nc) => ({
-      setValue: v => { while (ma.values.length < r) ma.values.push([]); ma.values[r - 1][c - 1] = v; },
+      setValue: v => { if (opts.stampFail && c === 14) throw new Error('Protected cell'); while (ma.values.length < r) ma.values.push([]); ma.values[r - 1][c - 1] = v; },
       setValues: grid => { for (let i = 0; i < nr; i++) { ma.values[r - 1 + i] = ma.values[r - 1 + i] || []; for (let j = 0; j < nc; j++) ma.values[r - 1 + i][c - 1 + j] = grid[i][j]; } }
     })
   };
@@ -36,7 +36,7 @@ function world(maRows, seatRows, opts = {}) {
     },
     LockService: { getScriptLock: () => ({ waitLock() {}, releaseLock() {} }) },
     PropertiesService: { getScriptProperties: () => ({ getProperty: k => (k === 'BETA_TEST_EMAILS' ? (opts.testEmails || 't1@x.test, t2@x.test') : null), setProperty() {} }) },
-    MailApp: { getRemainingDailyQuota: () => 100, sendEmail: m => sent.push(m) },
+    MailApp: { getRemainingDailyQuota: () => 100, sendEmail: m => { if (opts.failFor && opts.failFor.test(m.to)) throw new Error(opts.failMsg || 'Invalid email: ' + m.to); sent.push(m); } },
     Utilities: { sleep() {}, formatDate: () => '2026-10-01T19:00:00+08:00', getUuid: () => 'u' },
     UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getHeaders: () => ({ 'Content-Type': 'image/png' }), getBlob: () => ({ setName() { return this; } }) }) },
     Session: { getEffectiveUser: () => ({ getEmail: () => "me@x.test" }) },
@@ -187,6 +187,22 @@ w10.ma.values.push(w10.ma.values[0].map(h => ({ email: 'late@x.test', full_name:
 w10.ma.values.forEach((r, i) => { if (i && r[0] === 'both@x.test') r[13] = ''; });
 w10.run('sendEventPassesLIVE()');
 ok('LIVE after edits: only the new person and the cleared row are emailed', w10.sent.map(m => m.to).sort().join(',') === 'both@x.test,late@x.test', w10.sent.map(m => m.to).join(','));
+
+// ---------- 11. one bad address must not block everyone after it ----------
+const P11 = ['a@x.test', 'N/A', 'c@x.test', 'd@x.test'].map((email, i) => ({ email, full_name: 'P' + i, attendance_code: String(20001 + i), ticket_type: 'Regular Attendee', club_name: 'CCO' }));
+const w11 = world(P11, [], { failFor: /^N\/A$/ });
+w11.run('sendEventPassesLIVE()');
+const st = w11.rowsAsObjects();
+ok('bad address: logged as FAILED, everyone else still sent and stamped', w11.sent.map(m => m.to).join(',') === 'a@x.test,c@x.test,d@x.test' && w11.logs.some(l => /^FAILED \(Invalid email: N\/A\): P1 <N\/A>/.test(l)) && st[0].pass_sent === true && st[2].pass_sent === true && st[3].pass_sent === true, w11.sent.map(m => m.to).join(','));
+ok('bad address: that row stays unmarked (retried after the fix)', st[1].pass_sent === '' || st[1].pass_sent === undefined);
+ok('summary counts the failure', w11.logs.some(l => /Done\. Sent: 3, Skipped: 0, Failed: 1/.test(l)));
+const w11b = world(P11, [], { failFor: /^c@/, failMsg: 'Service invoked too many times for one day: email.' });
+w11b.run('sendEventPassesLIVE()');
+ok('quota error: stops instead of failing every remaining row', w11b.sent.map(m => m.to).join(',') === 'a@x.test,N/A' && !w11b.sent.some(m => m.to === 'd@x.test') && w11b.logs.some(l => /^STOP: Gmail refused to send more today/.test(l)) && w11b.logs.some(l => /Stopped early\./.test(l)));
+
+const w11c = world(P11.filter(p => p.email !== 'N/A'), [], { stampFail: true });
+w11c.run('sendEventPassesLIVE()');
+ok('cannot record pass_sent: stops after the first email instead of sending unrecorded passes', w11c.sent.length === 1 && w11c.logs.some(l => /^STOP: sent to P0 <a@x\.test> but could NOT write pass_sent \(Protected cell\)/.test(l)));
 
 console.log(fail ? '\nSOME FAILED' : '\nALL PASS');
 process.exitCode = fail ? 1 : 0;
