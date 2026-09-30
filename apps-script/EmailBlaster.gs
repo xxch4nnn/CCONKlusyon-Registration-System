@@ -423,9 +423,9 @@ const INVITATION_HTML_TEMPLATE = `
       <tr>
         <td class="px" style="padding: 32px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 16px; line-height: 1.6; color: ${BRAND.ink};">
           <h1 style="margin: 0 0 20px 0; font-family: ${BRAND.fontDisplay}; font-size: 24px; line-height: 32px; font-weight: 700; letter-spacing: 0.5px; color: ${BRAND.gold};">Your Invitation &amp; Entry Pass</h1>
-          <p style="margin: 0 0 16px 0;">Greetings in the name of genuine student service,</p>
+          <p style="margin: 0 0 16px 0;">Greetings in the name of genuine student service!</p>
           <p style="margin: 0 0 16px 0;">We are thrilled to officially welcome you to <strong style="color: ${BRAND.gold}; font-weight:600;">CCOnklusyon 2026: The Legacy CContinues!</strong> As we culminate a year of collective leadership, passion, and student initiative, we cannot wait to celebrate these shared milestones with you.</p>
-          <p style="margin: 0 0 4px 0;">This is your official invitation letter. Below is your official entry pass and unique attendance record:</p>
+          <p style="margin: 0 0 4px 0;">This is your official invitation. Below is your official entry pass and unique attendance record:</p>
         </td>
       </tr>
 
@@ -492,11 +492,11 @@ function buildPassHtml_(row) {
 /** Compulsory plain-text fallback (spec requirement — anti-spam). */
 function buildPassPlainText_(row) {
   const table = row.table_allocation && String(row.table_allocation) !== '0' ? row.table_allocation : 'To be announced';
-  return 'Greetings in the name of genuine student service,\n\n' +
+  return 'Greetings in the name of genuine student service!\n\n' +
     'We are thrilled to officially welcome you to CCOnklusyon 2026: The Legacy CContinues! ' +
     'As we culminate a year of collective leadership, passion, and student initiative, we ' +
     'cannot wait to celebrate these shared milestones with you.\n\n' +
-    'This is your official invitation letter. Your entry pass and unique attendance record:\n\n' +
+    'This is your official invitation. Your entry pass and unique attendance record:\n\n' +
     'Ticket type: ' + row.ticket_type + '\n' +
     'Attendance code: ' + row.attendance_code + '\n' +
     'Table Number: ' + table + '\n' +

@@ -5,6 +5,11 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-30 — Invitation copy: greeting and "official invitation"
+**By:** user. Greeting now ends with an exclamation mark ("Greetings in the name of genuine student service!"), and "This is your official invitation letter." is now "This is your official invitation." — both in the HTML and the plain-text version.
+
+---
+
 ## 2026-09-30 — Dispatch tracking hardened (`pass_sent` / `pass_sent_timestamp`)
 **By:** user ("some fields were not updated when the emails were sent" — the columns exist to show who got a pass and when) + Claude
 **Finding:** every pass email in the sender's Gmail is a Sept 28 **`[TEST]`** send; test mode never writes these columns by design (a test pass goes to a test inbox, not that attendee — stamping it would be false and would make the real run skip that person). So nothing was broken for those sends, but the real-send path had three ways to lose the record:
