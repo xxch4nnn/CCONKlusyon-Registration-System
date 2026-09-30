@@ -34,6 +34,7 @@ function world(maRows, seatRows) {
     MailApp: { getRemainingDailyQuota: () => 100, sendEmail: m => sent.push(m) },
     Utilities: { sleep() {}, formatDate: () => '2026-10-01T19:00:00+08:00', getUuid: () => 'u' },
     UrlFetchApp: { fetch: () => ({ getResponseCode: () => 200, getHeaders: () => ({ 'Content-Type': 'image/png' }), getBlob: () => ({ setName() { return this; } }) }) },
+    Session: { getEffectiveUser: () => ({ getEmail: () => "me@x.test" }) },
     ContentService: { MimeType: { JSON: 'json' }, createTextOutput: t => ({ setMimeType() { return this; } }) }
   };
   vm.createContext(ctx);

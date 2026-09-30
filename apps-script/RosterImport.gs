@@ -208,8 +208,17 @@ function logImportReport_(report, dryRun) {
 }
 
 function importFinalSeating_(dryRun) {
-  const source = SpreadsheetApp.openById(SEATING_SPREADSHEET_ID).getSheetByName(SEATING_SHEET_NAME);
+  let source;
+  try {
+    source = SpreadsheetApp.openById(SEATING_SPREADSHEET_ID).getSheetByName(SEATING_SHEET_NAME);
+  } catch (err) {
+    let who = '';
+    try { who = Session.getEffectiveUser().getEmail(); } catch (e) { /* not available */ }
+    throw new Error('Could not open the seating workbook (CCOnklusyon_2026_Seating_Plan, id ' + SEATING_SPREADSHEET_ID + ')' +
+      (who ? ' as ' + who : '') + '. Make sure this Google account can open that file, then run again. (' + err.message + ')');
+  }
   if (!source) throw new Error('Tab "' + SEATING_SHEET_NAME + '" not found in the seating workbook.');
+  Logger.log('Reading "' + SEATING_SHEET_NAME + '" from the seating workbook…');
   const records = readFinalSeating_(source.getDataRange().getValues());
 
   const lock = LockService.getScriptLock(); // same lock as check-ins: no scan can land mid-write
