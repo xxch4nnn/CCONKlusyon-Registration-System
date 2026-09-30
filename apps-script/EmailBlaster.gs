@@ -524,8 +524,8 @@ function buildPassInlineImages_(row) {
 // fallback are both built from this array.
 const INFO_LINKS = [
   { label: 'Event Primer', url: 'https://drive.google.com/file/d/1tJN_6Ic2Q5VSVY9aUbjeWHwx90qHZNlE/view' },
-  { label: 'General Information Sheet (Pamphlet/Flyer)', url: 'https://drive.google.com/file/d/1XmiJNZ11EJT_baw1ua7aCif8HprLSsRx/view' },
-  { label: 'Seating Plan', url: 'https://drive.google.com/file/d/1ET_CCNFbx6xuZSA7UFw0bDxl4363cbRb/view' },
+  { label: 'General Information Sheet (Pamphlet/Flyer)', url: 'https://drive.google.com/file/d/1jnWHG-kHZuoEF9rYWLxgd-F2TE8CeMZs/view' },
+  { label: 'Seating Plan', url: 'https://drive.google.com/file/d/1U2gYQyopdGnAFLLYB6dkr6rGKrB8DBXm/view' },
   { label: 'Floor Plan (3D)', url: 'https://drive.google.com/file/d/1k-MicOsWupFw-llJW3Y4V0c6IZ4SjjHR/view' },
   { label: 'Emergency Plan', url: 'https://drive.google.com/file/d/10D_TVU_7xZ9nxBlL5kM7zsvlX_V-deLG/view' }
 ];

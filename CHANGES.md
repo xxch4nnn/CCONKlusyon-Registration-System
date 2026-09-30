@@ -5,6 +5,11 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Updated Seating Plan and Flyer links
+**By:** user. `INFO_LINKS`: "General Information Sheet (Pamphlet/Flyer)" → Drive file `1jnWHG-kHZuoEF9rYWLxgd-F2TE8CeMZs`; "Seating Plan" → `1U2gYQyopdGnAFLLYB6dkr6rGKrB8DBXm` (replaces the one set earlier today). HTML list and plain text both follow. Flagged, not changed: both files are shared "Anyone with the link — Editor".
+
+---
+
 ## 2026-10-01 — Updated Seating Plan link
 **By:** user. `INFO_LINKS` "Seating Plan" now points at Drive file `1ET_CCNFbx6xuZSA7UFw0bDxl4363cbRb` (HTML list and plain text follow). Flagged, not changed: that file is shared "Anyone with the link — Editor", like the other info links.
 
