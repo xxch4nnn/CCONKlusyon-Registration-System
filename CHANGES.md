@@ -5,6 +5,11 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Updated Seating Plan link
+**By:** user. `INFO_LINKS` "Seating Plan" now points at Drive file `1ET_CCNFbx6xuZSA7UFw0bDxl4363cbRb` (HTML list and plain text follow). Flagged, not changed: that file is shared "Anyone with the link — Editor", like the other info links.
+
+---
+
 ## 2026-10-01 — Live send: "send if pass_sent OR pass_sent_timestamp is empty"; rows added later get their pass
 **By:** user ("send to them if pass_sent or pass_sent_timestamp is empty, otherwise don't; I'll edit Master_Attendance later and want those people to get their emails too") + Claude
 **Before:** the skip checked only `pass_sent` truthiness — the timestamp was ignored, a typed "FALSE" counted as sent, and a hand-added row with no `attendance_code` was skipped ("missing attendance_code").
