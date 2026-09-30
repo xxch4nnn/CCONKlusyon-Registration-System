@@ -17,6 +17,9 @@
  * version, so a new function won't appear there until you save. First run of any function that
  * touches Gmail/Sheets will also prompt a Google "Authorization required" screen — that's normal
  * for a script only you own; Review permissions -> Advanced -> Go to (project name) -> Allow.
+ * Since the images became embedded (2026-09-30) the pass also needs "Connect to an external
+ * service" (UrlFetchApp fetches the banner once per run and each attendee's QR) — one more
+ * Allow on the first run after pasting.
  *
  * Dispatch tracking (added 2026-09-28): Master_Attendance needs two new header cells added
  * MANUALLY, right after column M (`checked_in_by`) — this script never writes schema, only data:
@@ -150,6 +153,8 @@ function escapeHtml_(s) {
  *                    (+ dispatchTsField) back to the sheet.
  *   dispatchTsField  (optional) header name for the matching timestamp column.
  *   forceResend      (optional) true = ignore dispatchField and send/re-stamp everyone anyway.
+ *   buildInlineImages (optional) function(row) -> { key: Blob } embedded in the message and
+ *                    referenced in the HTML as <img src="cid:key">. If it throws, the row is skipped.
  */
 function sendMailBlast_(rows, opts) {
   const throttleMs = opts.throttleMs || 2000;
@@ -194,16 +199,31 @@ function sendMailBlast_(rows, opts) {
       return;
     }
 
+    // Embedded images are fetched BEFORE sending: if one can't be fetched, the row is skipped
+    // (not stamped as sent), so a re-run picks it up — nobody gets a pass without a QR code.
+    let inlineImages = null;
+    if (opts.buildInlineImages) {
+      try {
+        inlineImages = opts.buildInlineImages(row);
+      } catch (err) {
+        Logger.log('SKIP (image fetch failed: ' + err.message + '): ' + row.full_name);
+        skipped++;
+        return;
+      }
+    }
+
     const subject = typeof opts.subject === 'function' ? opts.subject(row) : opts.subject;
     const finalSubject = opts.testMode ? '[TEST] ' + subject : subject;
 
-    MailApp.sendEmail({
+    const message = {
       to: targetEmail,
       subject: finalSubject,
       body: opts.buildText(row),
       htmlBody: opts.buildHtml(row),
       name: SENDER_NAME
-    });
+    };
+    if (inlineImages) message.inlineImages = inlineImages;
+    MailApp.sendEmail(message);
 
     if (trackDispatch) {
       markDispatched_(sheetCtx.headers, sheetCtx.sheet, row._rowIndex, opts.dispatchField, opts.dispatchTsField);
@@ -268,30 +288,70 @@ function sendCustomBlastExample() {
 /**
  * Field map for the invitation template.
  *   {{Ticket_Type}}      <- ticket_type
- *   {{QR_Code_URL}}      <- qr_code_url
+ *   {{QR_Link}}          <- a web link to the same QR image (the "Open my QR code" fallback button)
  *   {{Attendance_Code}}  <- attendance_code
  *   {{Table_Number}}     <- table_allocation (0/blank = "To be announced")
  *   {{Tag_Bg}} / {{Tag_Text_Color}}  <- VIP = filled gold chip; Regular = outlined gold chip
+ * The QR itself is embedded (cid:qrCode), built from attendance_code — see qrImageUrl_.
  */
 function buildInvitationFieldMap_(row) {
   const isVip = row.ticket_type === 'VIP Pass';
   const table = row.table_allocation;
   return {
     Ticket_Type: escapeHtml_(row.ticket_type),
-    QR_Code_URL: row.qr_code_url,
-    Attendance_Code: row.attendance_code,
+    QR_Link: qrImageUrl_(row.attendance_code),
+    Attendance_Code: escapeHtml_(row.attendance_code),
     Table_Number: escapeHtml_(table && String(table) !== '0' ? table : 'To be announced'),
     Tag_Bg: isVip ? BRAND.goldMid : 'transparent',
     Tag_Text_Color: isVip ? BRAND.onAccent : BRAND.gold
   };
 }
 
-// ============================ IMAGE PLACEHOLDERS ============================
+// ================================ IMAGES ================================
+// Both images are EMBEDDED in each email (inline cid: attachments), not linked. Linked images
+// depend on the phone's mail app loading remote content: "Ask before displaying external
+// images", data saver, and weak signal at the venue door all leave a blank box where the pass
+// should be. An embedded image travels inside the message, so it shows wherever the email opens.
+//
 // HERO BANNER — the only image you manage by hand. It already carries the CCO seal + wordmark.
-// Served from this repo via GitHub raw content: keep the file at docs/assets/hero-banner.jpg on
-// main. To change it, replace that file and push; to move it, change only this URL.
-// (The QR image comes from each row's qr_code_url column — nothing to swap.)
+// Fetched ONCE per run from this repo (docs/assets/hero-banner.jpg on main), then attached to
+// every email. To change it, replace that file and push; to move it, change only this URL.
 const HERO_BANNER_URL = 'https://raw.githubusercontent.com/xxch4nnn/CCONKlusyon-Registration-System/main/docs/assets/hero-banner.jpg';
+
+// QR CODE — generated from attendance_code at send time (the sheet's qr_code_url column is no
+// longer used by the email). 600 px source so it stays sharp on 3x phone screens at 200 px;
+// qzone=2 bakes a white quiet zone into the image itself, so it still scans if a dark-mode mail
+// app darkens the white frame around it; ecc=M adds error correction for screen-to-camera scans.
+const QR_IMAGE_BASE = 'https://api.qrserver.com/v1/create-qr-code/?size=600x600&qzone=2&ecc=M&format=png&data=';
+
+function qrImageUrl_(attendanceCode) {
+  return QR_IMAGE_BASE + encodeURIComponent(String(attendanceCode));
+}
+
+/** Fetches an image as a named Blob; throws (so the row is skipped) unless it is really an image. */
+function fetchImageBlob_(url, name) {
+  const res = UrlFetchApp.fetch(url, { muteHttpExceptions: true });
+  const headers = res.getHeaders();
+  const type = String(headers['Content-Type'] || headers['content-type'] || '');
+  if (res.getResponseCode() !== 200 || type.indexOf('image/') !== 0) {
+    throw new Error('HTTP ' + res.getResponseCode() + ' (' + type + ') from ' + url);
+  }
+  return res.getBlob().setName(name);
+}
+
+let heroBannerBlobCache_ = null; // one fetch per run, reused for every email
+function getHeroBannerBlob_() {
+  if (!heroBannerBlobCache_) heroBannerBlobCache_ = fetchImageBlob_(HERO_BANNER_URL, 'hero-banner.jpg');
+  return heroBannerBlobCache_;
+}
+
+/** The two embedded images for one attendee: <img src="cid:heroBanner"> and <img src="cid:qrCode">. */
+function buildPassInlineImages_(row) {
+  return {
+    heroBanner: getHeroBannerBlob_(),
+    qrCode: fetchImageBlob_(qrImageUrl_(row.attendance_code), 'qr-' + row.attendance_code + '.png')
+  };
+}
 // ===========================================================================
 
 // GENERAL INFORMATION LINKS — edit labels/URLs here only; the HTML list and the plain-text
@@ -305,27 +365,39 @@ const INFO_LINKS = [
 ];
 
 // One row per link: hairline-divided list, ink label, gold arrow, no default underline.
+// The padding sits on the <a> itself (not the cell), so the whole 44 px row is the tap target.
 const INFO_LINKS_HTML = INFO_LINKS.map(function (l, i) {
   const rule = i === 0 ? '' : ' border-top: 1px solid rgba(201, 141, 69, 0.35);';
-  return '<tr><td style="padding: 12px 0;' + rule + '">' +
-    '<a href="' + l.url + '" target="_blank" style="display: block; font-family: ' + BRAND.fontBody + '; font-size: 15px; font-weight: 600; color: ' + BRAND.ink + '; text-decoration: none;">' +
-    escapeHtml_(l.label) + ' <span style="color: ' + BRAND.gold + ';">&rarr;</span></a></td></tr>';
+  return '<tr><td style="padding: 0;' + rule + '">' +
+    '<a href="' + l.url + '" target="_blank" style="display: block; padding: 12px 0; font-family: ' + BRAND.fontBody + '; font-size: 16px; line-height: 20px; font-weight: 600; color: ' + BRAND.ink + '; text-decoration: none;">' +
+    escapeHtml_(l.label) + '&nbsp;<span style="color: ' + BRAND.gold + ';">&rarr;</span></a></td></tr>'; // &nbsp; keeps the arrow with the last word
 }).join('\n            ');
 
 const INVITATION_HTML_TEMPLATE = `
   <!DOCTYPE html><html><head>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Cormorant+Garamond:wght@500;600&display=swap" rel="stylesheet">
+    <style>
+      /* Phones: 20 px side margins instead of 30 px (Gmail and Apple Mail honour this; anything
+         that strips <style> just keeps the 30 px inline value). */
+      @media only screen and (max-width: 480px) {
+        .px { padding-left: 20px !important; padding-right: 20px !important; }
+        .card-px { padding-left: 16px !important; padding-right: 16px !important; }
+      }
+    </style>
   </head>
   <body style="margin: 0; padding: 32px 0; background-color: ${BRAND.royalBlue}; font-family: ${BRAND.fontBody};">
     <table role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="${BRAND.royalBlue}" style="max-width: 600px; margin: 0 auto; background-color: ${BRAND.royalBlue}; border-radius: 24px; overflow: hidden; border: 1px solid ${BRAND.goldDeep};">
 
-      <!-- ===== HERO BANNER (image placeholder) — src comes from HERO_BANNER_URL above ===== -->
-      <tr><td align="center" style="line-height:0;"><img src="${HERO_BANNER_URL}" alt="CCOnklusyon 2026 — The Legacy CContinues" width="600" style="width:100%; max-width:600px; height:auto; display:block; border:0;"></td></tr>
+      <!-- ===== HERO BANNER — embedded image (cid:heroBanner), see HERO_BANNER_URL above =====
+           Styled alt text so a mail app that still hides it shows gold text, not a broken box.
+           Its own top corners are rounded: Gmail ignores overflow:hidden on the card. -->
+      <tr><td align="center" bgcolor="${BRAND.royalBlue}"><img src="cid:heroBanner" alt="CCOnklusyon 2026: The Legacy CContinues" width="600" style="width:100%; max-width:600px; height:auto; display:block; border:0; border-radius: 23px 23px 0 0; font-family: ${BRAND.fontDisplay}; font-size: 20px; line-height: 28px; font-weight: 700; color: ${BRAND.gold};"></td></tr>
       <!-- ===== END HERO BANNER ===== -->
 
       <tr>
-        <td style="padding: 32px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 16px; line-height: 1.6; color: ${BRAND.ink};">
+        <td class="px" style="padding: 32px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 16px; line-height: 1.6; color: ${BRAND.ink};">
+          <h1 style="margin: 0 0 20px 0; font-family: ${BRAND.fontDisplay}; font-size: 24px; line-height: 32px; font-weight: 700; letter-spacing: 0.5px; color: ${BRAND.gold};">Your Invitation &amp; Entry Pass</h1>
           <p style="margin: 0 0 16px 0;">Greetings in the name of genuine student service,</p>
           <p style="margin: 0 0 16px 0;">We are thrilled to officially welcome you to <strong style="color: ${BRAND.gold}; font-weight:600;">CCOnklusyon 2026: The Legacy CContinues!</strong> As we culminate a year of collective leadership, passion, and student initiative, we cannot wait to celebrate these shared milestones with you.</p>
           <p style="margin: 0 0 4px 0;">This is your official invitation letter. Below is your official entry pass and unique attendance record:</p>
@@ -334,20 +406,22 @@ const INVITATION_HTML_TEMPLATE = `
 
       <!-- ===== ENTRY PASS CARD ===== -->
       <tr>
-        <td style="padding: 16px 30px 8px 30px;">
+        <td class="px" style="padding: 16px 30px 8px 30px;">
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" bgcolor="${BRAND.navyDeep}" style="background-color: ${BRAND.navyDeep}; border: 2px solid ${BRAND.goldDeep}; border-radius: 24px; border-collapse: separate;">
             <tr>
-              <td align="center" style="padding: 24px 20px 8px 20px;">
-                <span style="display:inline-block; padding: 6px 18px; background-color: {{Tag_Bg}}; border: 1px solid ${BRAND.goldDeep}; border-radius: 8px; color: {{Tag_Text_Color}}; font-family: ${BRAND.fontDisplay}; font-weight: 700; font-size: 13px; letter-spacing: 1.5px; text-transform: uppercase;">{{Ticket_Type}}</span>
+              <td align="center" class="card-px" style="padding: 24px 20px 8px 20px;">
+                <span style="display:inline-block; padding: 6px 18px; background-color: {{Tag_Bg}}; border: 1px solid ${BRAND.goldDeep}; border-radius: 8px; color: {{Tag_Text_Color}}; font-family: ${BRAND.fontDisplay}; font-weight: 700; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase;">{{Ticket_Type}}</span>
               </td>
             </tr>
             <tr>
-              <td align="center" style="padding: 12px 20px 28px 20px;">
-                <!-- QR CODE — from the row's qr_code_url column; no placeholder needed -->
-                <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td align="center" bgcolor="#FFFFFF" style="background-color: #FFFFFF; padding: 12px; border-radius: 12px;"><img src="{{QR_Code_URL}}" alt="Attendance QR Code" width="160" height="160" style="display:block; border:0;"></td></tr></table>
-                <div style="margin-top: 18px; font-family: ${BRAND.fontText}; font-size: 12px; color: ${BRAND.gold}; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;">Attendance Code</div>
+              <td align="center" class="card-px" style="padding: 12px 20px 28px 20px;">
+                <!-- QR CODE — embedded image (cid:qrCode) built from attendance_code; white quiet zone is inside the image -->
+                <table role="presentation" border="0" cellpadding="0" cellspacing="0"><tr><td align="center" bgcolor="#FFFFFF" style="background-color: #FFFFFF; padding: 8px; border-radius: 12px;"><img src="cid:qrCode" alt="QR code for attendance code {{Attendance_Code}}" width="200" height="200" style="display:block; width:200px; height:200px; border:0; font-family: ${BRAND.fontBody}; font-size: 14px; color: ${BRAND.onAccent};"></td></tr></table>
+                <div style="margin-top: 18px; font-family: ${BRAND.fontText}; font-size: 14px; color: ${BRAND.gold}; font-weight: 600; letter-spacing: 1px; text-transform: uppercase;">Attendance Code</div>
                 <div style="font-family: ${BRAND.fontDisplay}; font-size: 30px; font-weight: 700; letter-spacing: 4px; color: ${BRAND.gold}; margin-top: 6px;">{{Attendance_Code}}</div>
                 <div style="margin-top: 16px; padding: 7px 18px; display: inline-block; border-radius: 20px; border: 1px solid ${BRAND.goldDeep}; font-family: ${BRAND.fontBody}; font-size: 14px; font-weight: 600; color: ${BRAND.ink};">Table Number: <span style="color: ${BRAND.gold}; font-weight: 700;">{{Table_Number}}</span></div>
+                <!-- Fallback button: opens the same QR as a web image (handy for a screenshot). 16 px text, 48 px tall. -->
+                <table role="presentation" align="center" border="0" cellpadding="0" cellspacing="0" style="margin-top: 20px;"><tr><td align="center" style="border: 1px solid ${BRAND.goldDeep}; border-radius: 10px;"><a href="{{QR_Link}}" target="_blank" style="display: inline-block; padding: 14px 24px; font-family: ${BRAND.fontBody}; font-size: 16px; line-height: 20px; font-weight: 700; color: ${BRAND.gold}; text-decoration: none;">Open my QR code</a></td></tr></table>
               </td>
             </tr>
           </table>
@@ -356,8 +430,8 @@ const INVITATION_HTML_TEMPLATE = `
 
       <!-- ===== ENTRY REMINDERS ===== -->
       <tr>
-        <td style="padding: 24px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 15px; line-height: 1.6; color: ${BRAND.ink};">
-          <p style="margin: 0 0 12px 0; font-family: ${BRAND.fontDisplay}; font-size: 15px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: ${BRAND.gold};">Important Entry Reminders</p>
+        <td class="px" style="padding: 24px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 15px; line-height: 1.6; color: ${BRAND.ink};">
+          <h2 style="margin: 0 0 12px 0; font-family: ${BRAND.fontDisplay}; font-size: 22px; line-height: 30px; font-weight: 700; letter-spacing: 0.5px; color: ${BRAND.gold};">Important Entry Reminders</h2>
           <p style="margin: 0 0 12px 0;"><strong style="color: ${BRAND.gold};">Present to Enter:</strong> Please present this email or keep a clear screenshot of your QR code ready on your mobile device at the registration terminal upon arrival.</p>
           <p style="margin: 0 0 12px 0;"><strong style="color: ${BRAND.gold};">One-Time Scan:</strong> This QR code is uniquely tied to your profile and will serve as your official entry verification and attendance log.</p>
           <p style="margin: 0;"><strong style="color: ${BRAND.gold};">Early Check-in:</strong> Registration opens at 12:00 PM. We encourage arriving early to avoid long queues and ensure a smooth entrance before the ceremonies begin.</p>
@@ -366,9 +440,9 @@ const INVITATION_HTML_TEMPLATE = `
 
       <!-- ===== GENERAL INFORMATION LINKS (Google Drive — swap any href below) ===== -->
       <tr>
-        <td style="padding: 24px 30px 20px 30px;">
+        <td class="px" style="padding: 24px 30px 20px 30px;">
           <table role="presentation" border="0" cellpadding="0" cellspacing="0" width="100%" style="border-top: 1px solid ${BRAND.goldDeep};">
-            <tr><td style="padding-top: 20px; padding-bottom: 10px; font-family: ${BRAND.fontDisplay}; font-size: 14px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; color: ${BRAND.gold};">General Information</td></tr>
+            <tr><td style="padding-top: 20px; padding-bottom: 6px;"><h2 style="margin: 0; font-family: ${BRAND.fontDisplay}; font-size: 22px; line-height: 30px; font-weight: 700; letter-spacing: 0.5px; color: ${BRAND.gold};">General Information</h2></td></tr>
             ${INFO_LINKS_HTML}
           </table>
         </td>
@@ -376,10 +450,10 @@ const INVITATION_HTML_TEMPLATE = `
 
       <!-- ===== CLOSING + FOOTER (one centred block) ===== -->
       <tr>
-        <td align="center" style="padding: 24px 30px 28px 30px; border-top: 1px solid ${BRAND.goldDeep};">
-          <p style="font-family: ${BRAND.fontDisplay}; font-size: 18px; font-weight: 600; letter-spacing: 0.5px; color: ${BRAND.gold}; margin: 4px 0 18px 0;">We can't wait to see you there!</p>
-          <p style="font-family: ${BRAND.fontDisplay}; font-size: 14px; font-weight: 700; letter-spacing: 1px; color: ${BRAND.gold}; margin: 0 0 6px 0;">One Council, One Vision.</p>
-          <p style="font-family: ${BRAND.fontText}; font-size: 13px; letter-spacing: 0.5px; color: ${BRAND.ink}; margin: 0;">41st Council of Clubs and Organizations &bull; CCOnklusyon: The Legacy CContinues</p>
+        <td align="center" class="px" style="padding: 24px 30px 28px 30px; border-top: 1px solid ${BRAND.goldDeep};">
+          <p style="font-family: ${BRAND.fontDisplay}; font-size: 22px; line-height: 30px; font-weight: 600; letter-spacing: 0.5px; color: ${BRAND.gold}; margin: 4px 0 18px 0;">We can't wait to see you there!</p>
+          <p style="font-family: ${BRAND.fontDisplay}; font-size: 16px; font-weight: 700; letter-spacing: 1px; color: ${BRAND.gold}; margin: 0 0 6px 0;">One Council, One Vision.</p>
+          <p style="font-family: ${BRAND.fontText}; font-size: 14px; letter-spacing: 0.5px; color: ${BRAND.ink}; margin: 0;">41st Council of Clubs and Organizations &bull; CCOnklusyon: The Legacy CContinues</p>
         </td>
       </tr>
     </table>
@@ -401,7 +475,7 @@ function buildPassPlainText_(row) {
     'Ticket type: ' + row.ticket_type + '\n' +
     'Attendance code: ' + row.attendance_code + '\n' +
     'Table Number: ' + table + '\n' +
-    'QR code (view in an HTML-capable mail client): ' + row.qr_code_url + '\n\n' +
+    'QR code (opens in your browser): ' + qrImageUrl_(row.attendance_code) + '\n\n' +
     'IMPORTANT ENTRY REMINDERS\n' +
     '- Present to Enter: present this email or a clear screenshot of your QR code at the registration terminal upon arrival.\n' +
     '- One-Time Scan: this QR code is uniquely tied to your profile and serves as your official entry verification and attendance log.\n' +
@@ -430,6 +504,7 @@ function sendEventPasses(testMode, testEmailOverrides, sampleOnly, forceResend) 
     subject: 'Your Official Invitation & Entry Pass — CCOnklusyon 2026',
     buildHtml: buildPassHtml_,
     buildText: buildPassPlainText_,
+    buildInlineImages: buildPassInlineImages_,
     requiredFields: ['attendance_code'],
     testMode: !!testMode,
     testEmailOverrides: testEmailOverrides || [],

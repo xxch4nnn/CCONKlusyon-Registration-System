@@ -5,6 +5,19 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-30 — Invitation email: banner and QR embedded (missing on phones); sizes checked against a mobile email spec
+**By:** user (testers' phones showed no banner and no QR while laptops did; supplied a recommended-sizes table) + Claude
+**Finding:** both images were *linked* (banner from `raw.githubusercontent.com`, QR from `api.qrserver.com`). Both URLs were re-checked and serve valid images, so this was not a broken link: the phones simply didn't load linked images (Gmail app "Ask before displaying external images", data saver, weak signal, or a mail app that blocks remote content). The same risk applies at the venue door. Also noted: the Sept 28 test sends (6:45 and 7:20 PM) went out *before* the readability fix, so testers also saw the older serif text.
+**What (`EmailBlaster.gs`):**
+1. **Embedded images.** `sendMailBlast_` gains an optional `buildInlineImages(row)`; the invitation passes the banner (fetched once per run) and the attendee's QR as `inlineImages`, referenced as `cid:heroBanner` / `cid:qrCode`. If an image can't be fetched the row is logged `SKIP (image fetch failed…)` and **not** stamped `pass_sent`, so a re-run picks it up. `sendCustomBlast` is unchanged.
+2. **QR built from `attendance_code` at send time** (`qrImageUrl_`): 600 px source shown at 200 px (sharp on 3x screens, was 180 px shown at 160), `qzone=2` quiet zone inside the image (still scans if dark mode darkens the white frame), `ecc=M`. Same payload (the 5-digit code) as before, so the scanner is unaffected. The sheet's `qr_code_url` column is no longer used by the email.
+3. **Fallbacks:** an "Open my QR code" button (web link to the same QR, handy for a screenshot); styled alt text; a live-text title "Your Invitation & Entry Pass" so the email reads right even without the banner.
+4. **Sizes vs the spec table:** container 600 px / 100% on phones (unchanged); side margins 30 px desktop, 20 px on phones (`<style>` media query, inline 30 px fallback); all text ≥ 14 px; headings 22–24 px (section labels are now title-case `<h2>` instead of 14–15 px uppercase labels); info links 16 px with the padding moved onto the `<a>` so each row is a 44 px tap target (was ~17 px); button 16 px / 48 px tall; arrow kept with the last word (`&nbsp;`); banner's own top corners rounded (Gmail ignores the card's `overflow:hidden`).
+**Verified:** rendered at 360/390/1280 px in headless Chromium (no horizontal overflow; headings fit on one line at 360 px); a mocked Apps Script send (both images inline in every email, banner fetched once, no remote `<img>` left, QR failure → row skipped and not stamped). `node tests/run.js` all pass. **Not verified:** a real send through MailApp to a phone — run `sendEventPassesBetaTest()` first.
+**Needs you:** paste the new `EmailBlaster.gs`, save, run `sendEventPassesBetaTest()`; the first run asks for one more permission ("Connect to an external service", for UrlFetchApp). For re-tests use a new subject or fresh inbox — Gmail can fold repeated content in a thread behind "•••".
+
+---
+
 ## 2026-09-28 — EmailBlaster.gs redesigned against the CCOnklusyon 2026 identity; dispatch tracking added
 **By:** user (design system, copy, links, duplicate-send concern) + Claude
 **What:**
