@@ -421,7 +421,7 @@ const INVITATION_HTML_TEMPLATE = `
       <!-- ===== END HERO BANNER ===== -->
 
       <tr>
-        <td class="px" style="padding: 32px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 16px; line-height: 1.6; color: ${BRAND.ink};">
+        <td class="px" style="padding: 32px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 16px; line-height: 1.6; text-align: justify; color: ${BRAND.ink};">
           <h1 style="margin: 0 0 20px 0; font-family: ${BRAND.fontDisplay}; font-size: 24px; line-height: 32px; font-weight: 700; letter-spacing: 0.5px; color: ${BRAND.gold};">Your Invitation &amp; Entry Pass</h1>
           <p style="margin: 0 0 16px 0;">Greetings in the name of genuine student service!</p>
           <p style="margin: 0 0 16px 0;">We are thrilled to officially welcome you to <strong style="color: ${BRAND.gold}; font-weight:600;">CCOnklusyon 2026: The Legacy CContinues!</strong> As we culminate a year of collective leadership, passion, and student initiative, we cannot wait to celebrate these shared milestones with you.</p>
@@ -455,7 +455,7 @@ const INVITATION_HTML_TEMPLATE = `
 
       <!-- ===== ENTRY REMINDERS ===== -->
       <tr>
-        <td class="px" style="padding: 24px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 15px; line-height: 1.6; color: ${BRAND.ink};">
+        <td class="px" style="padding: 24px 30px 8px 30px; font-family: ${BRAND.fontBody}; font-size: 15px; line-height: 1.6; text-align: justify; color: ${BRAND.ink};">
           <h2 style="margin: 0 0 12px 0; font-family: ${BRAND.fontDisplay}; font-size: 22px; line-height: 30px; font-weight: 700; letter-spacing: 0.5px; color: ${BRAND.gold};">Important Entry Reminders</h2>
           <p style="margin: 0 0 12px 0;"><strong style="color: ${BRAND.gold};">Present to Enter:</strong> Please present this email or keep a clear screenshot of your QR code ready on your mobile device at the registration terminal upon arrival.</p>
           <p style="margin: 0 0 12px 0;"><strong style="color: ${BRAND.gold};">One-Time Scan:</strong> This QR code is uniquely tied to your profile and will serve as your official entry verification and attendance log.</p>

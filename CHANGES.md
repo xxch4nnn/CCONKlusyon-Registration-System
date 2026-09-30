@@ -5,6 +5,11 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-30 — Body text justified
+**By:** user. The intro paragraphs and the entry reminders use `text-align: justify` (headings, pass card, links and footer unchanged). On narrow phones some lines show wider word gaps — the usual trade-off of justified text in email.
+
+---
+
 ## 2026-09-30 — Invitation copy: greeting and "official invitation"
 **By:** user. Greeting now ends with an exclamation mark ("Greetings in the name of genuine student service!"), and "This is your official invitation letter." is now "This is your official invitation." — both in the HTML and the plain-text version.
 
