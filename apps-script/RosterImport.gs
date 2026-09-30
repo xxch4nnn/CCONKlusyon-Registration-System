@@ -9,6 +9,7 @@
  *   1. Run importFinalSeatingPreview()  — reads both sheets, WRITES NOTHING, logs what would change.
  *   2. Run importFinalSeating()         — does it, then generates attendance codes for new rows.
  *   3. Run auditRoster() (Code.gs) and sendEventPassesBetaTestVariety() (EmailBlaster.gs).
+ *   4. Run assignTokensPreview(), then assignTokens() — fills the Lei Garland `token` column (see below).
  *
  * Safe to re-run after the seating list changes: rows are matched on the registration "No.", so a
  * re-run UPDATES name/club/table/type in place and never touches attendance_code, qr_code_url,
@@ -230,6 +231,116 @@ function findSeatingSheet_() {
   }
   if (!sheet) throw new Error('No "' + SEATING_SHEET_NAME + '" tab (gid ' + SEATING_SHEET_GID + ') in this workbook. Check the tab name, then run again.');
   return sheet;
+}
+
+// ---- Tokens (Lei Garland) — 2026-10-01 ---------------------------------------------------------------------------------
+// Fills the `token` column so the scanner card and the Telegram alert say what to hand over on arrival.
+//   1. Run assignTokensPreview()  — WRITES NOTHING; logs who would get which token and who MAY have been missed.
+//   2. Run assignTokens()         — adds the `token` header if missing and fills ONLY blank token cells.
+// A token typed by hand is never overwritten, so hand-fix anyone the rules miss (or type "none" to mark "no token").
+// Rules read designation / club / attendee_type only — never names — so they keep working after a re-import.
+const TOKEN_GOLD = 'Gold Lei';
+const TOKEN_BLUE_GOLD = 'Blue & Gold Lei';
+const TOKEN_RIBBON = 'Ribbon';
+const TOKEN_RULES_ = [
+  // Gold Lei — VPAD, OSAS Director, CARESYSTEM, Federation of USeP Alumni, USeP Obrero Alumni
+  { token: TOKEN_GOLD, why: 'VPAD', test: function (r) { return /\bVPAD\b|vice\s*president\s*for\s*admin/i.test(r.designation); } },
+  { token: TOKEN_GOLD, why: 'OSAS Director', test: function (r) { return /\bOSAS\b.*director|director.*\bOSAS\b/i.test(r.designation); } },
+  { token: TOKEN_GOLD, why: 'CARESYSTEM', test: function (r) { return /care\s*system/i.test(r.club_name + ' ' + r.designation); } },
+  { token: TOKEN_GOLD, why: 'USeP Federation of Alumni', test: function (r) { return /federation\s+of\s+usep\s+alumni/i.test(r.designation + ' ' + r.club_name); } },
+  { token: TOKEN_GOLD, why: 'USeP Obrero Alumni', test: function (r) { return /obrero\s+alumni/i.test(r.designation + ' ' + r.club_name); } },
+  // Blue & Gold Lei — the former CCO advisers
+  { token: TOKEN_BLUE_GOLD, why: 'Former CCO Adviser', test: function (r) { return r.attendee_type === 'Former Adviser' || /former\s+(cco\s+)?advis/i.test(r.designation); } },
+  // Ribbon — beneficiaries, partners, club and org advisers
+  { token: TOKEN_RIBBON, why: 'Partner / beneficiary', test: function (r) { return r.attendee_type === 'External Partner' || /\b(partner|beneficiar|sponsor)/i.test(r.designation) || /beneficiar/i.test(r.club_name); } },
+  { token: TOKEN_RIBBON, why: 'Club / Org Adviser', test: function (r) { return r.attendee_type === 'Club Participant' && /\b(organi[sz]ation|org|club)\s+advis/i.test(r.designation); } }
+];
+// isNoToken_ ("none", "-", "n/a" typed in a token cell = deliberately no token) lives in Code.gs.
+
+function assignTokensPreview() { return assignTokens_(true); }
+function assignTokens() { return assignTokens_(false); }
+
+/** Pure planning step (unit-tested): returns { grid, report } — grid has the token column filled. */
+function planTokens_(maValues) {
+  const headers = maValues[0].map(function (h) { return String(h).trim(); });
+  const addHeader = headers.indexOf('token') < 0;
+  const allHeaders = addHeader ? headers.concat(['token']) : headers.slice();
+  const width = allHeaders.length;
+  const idx = {};
+  allHeaders.forEach(function (h, i) { if (h && idx[h] === undefined) idx[h] = i; });
+  ['full_name', 'designation', 'club_name', 'table_allocation'].forEach(function (f) {
+    if (idx[f] === undefined) throw new Error('Master_Attendance is missing column: ' + f);
+  });
+  const grid = maValues.map(function (row) { const r = row.slice(0, width); while (r.length < width) r.push(''); return r; });
+  grid[0] = allHeaders.slice();
+  const cell = function (row, f) { return idx[f] === undefined ? '' : String(row[idx[f]] == null ? '' : row[idx[f]]).trim(); };
+
+  const report = { addedHeader: addHeader, assigned: [], kept: [], byToken: {}, check: [] };
+  for (let r = 1; r < grid.length; r++) {
+    const row = grid[r];
+    const rec = {
+      full_name: cell(row, 'full_name'), designation: cell(row, 'designation'), club_name: cell(row, 'club_name'),
+      table: cell(row, 'table_allocation'), attendee_type: cell(row, 'attendee_type'), reg_no: cell(row, 'reg_no'),
+      ticket_type: cell(row, 'ticket_type')
+    };
+    if (!rec.full_name) continue;
+    const label = 'row ' + (r + 1) + (rec.reg_no ? ' (No. ' + rec.reg_no + ')' : '') + ' ' + rec.full_name + ' — ' +
+      (rec.designation || '?') + (rec.club_name ? ', ' + rec.club_name : '') + (rec.table ? ' @ ' + rec.table : '');
+    const current = cell(row, 'token');
+    const rule = TOKEN_RULES_.filter(function (x) { return x.test(rec); })[0];
+    let token = current;
+    if (current) {
+      if (!isNoToken_(current)) report.kept.push(label + ' => ' + current + ' (typed by hand, kept)');
+    } else if (rule) {
+      token = rule.token; row[idx.token] = token;
+      report.assigned.push(label + ' => ' + token + ' [' + rule.why + ']');
+    }
+    if (token && !isNoToken_(token)) report.byToken[token] = (report.byToken[token] || 0) + 1;
+
+    // "Did we miss anyone?" — dignitaries and advisers the rules did not give a token.
+    if (!token) {
+      const t = rec.table.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const why = (t === 'vvip' || rec.attendee_type === 'VVIP') ? 'seated at / typed VVIP'
+        : (t === 'vip' || rec.attendee_type === 'VIP') ? 'seated at / typed VIP'
+        : /advis/i.test(rec.designation) ? 'an adviser'
+        : (rec.attendee_type === 'Guest' || rec.attendee_type === 'USeP Office') ? rec.attendee_type
+        : '';
+      if (why) report.check.push(label + ' — ' + why + ', no token');
+    }
+  }
+  return { grid: grid, report: report };
+}
+
+function logTokenReport_(report, dryRun) {
+  const L = function (m) { Logger.log(m); };
+  L((dryRun ? 'TOKEN PREVIEW — nothing written. ' : 'TOKENS WRITTEN. ') + 'Totals: ' +
+    (Object.keys(report.byToken).map(function (k) { return k + ' ' + report.byToken[k]; }).join(', ') || 'none'));
+  if (report.addedHeader) L('New column ' + (dryRun ? 'to add' : 'added') + ' at the end of row 1: token');
+  L((dryRun ? 'Would fill ' : 'Filled ') + report.assigned.length + ':');
+  report.assigned.forEach(function (x) { L('  + ' + x); });
+  if (report.kept.length) { L('Kept ' + report.kept.length + ' hand-typed:'); report.kept.forEach(function (x) { L('  = ' + x); }); }
+  if (report.check.length) {
+    L('CHECK ' + report.check.length + ' — possibly missed (no token). Type the token in their `token` cell, or "none" to confirm:');
+    report.check.forEach(function (x) { L('  ? ' + x); });
+  }
+}
+
+function assignTokens_(dryRun) {
+  const lock = LockService.getScriptLock(); // same lock as check-ins
+  lock.waitLock(30000);
+  try {
+    const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
+    const values = sheet.getDataRange().getValues();
+    const plan = planTokens_(values);
+    logTokenReport_(plan.report, dryRun);
+    if (dryRun) return plan.report;
+    const col = plan.grid[0].indexOf('token') + 1; // write ONLY the token column; every other cell is untouched
+    sheet.getRange(1, col, plan.grid.length, 1).setValues(plan.grid.map(function (r) { return [r[col - 1]]; }));
+    SpreadsheetApp.flush();
+    return plan.report;
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function importFinalSeating_(dryRun) {

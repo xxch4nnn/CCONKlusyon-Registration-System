@@ -5,6 +5,20 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Day-of: special tables + Lei Garland tokens on Telegram and the scanner; design system on scanner/wall
+**By:** Claude (user: "the telegram should bump to whomever is seated on the special tables … also be used for the tokens"; apply the design system; review the scanners for day-of integrity).
+**Backend (`Code.gs`, BACKEND_VERSION `2026-10-01.1`):**
+- Telegram alert now fires for VIP Pass **or** a special table **or** a token. Titles: VIP → unchanged "VIP ARRIVAL DETECTED"; special table → "SPECIAL TABLE ARRIVAL"; token only → "TOKEN RECIPIENT ARRIVED" with "Token team: please hand it over". Any alert with a token adds `🎖 TOKEN: GOLD LEI` and tells the token team to bring it. Duplicate scans never re-alert. The original VIP message is byte-for-byte unchanged when there's no token/special table.
+- Special tables default to VVIP, VIP, SL's, Alumni 1, Alumni 2, 41st CCO Officers, Externals; override on the day with Script property `SPECIAL_TABLES` (no redeploy). Matching ignores case/spaces/apostrophes (the sheet uses a curly `SL’s`).
+- Check-in, duplicate and roster answers carry `attendee_type`, `token`, `special_table` (found by header; old sheets without the columns still work).
+- **Access key now OFF until an `API_KEY` property exists** (was fail-closed `KEY_NOT_SET`). The phones run the Version 6 deployment with no key; the old behaviour would have locked every door the moment this redeploy went live.
+**Tokens (`RosterImport.gs`):** `assignTokensPreview()` / `assignTokens()` add a `token` column and fill only blank cells, by rule (designation/club/type — no names in code): Gold Lei = VPAD, OSAS Director, CARESYSTEM, Federation of USeP Alumni, USeP Obrero Alumni; Blue & Gold Lei = former CCO advisers; Ribbon = partners/beneficiaries + club/org advisers. It logs a "possibly missed" list (VVIP/VIP seats, advisers, guests, USeP offices with no token). Hand-typed values win; `none` = deliberately none. Dry run on the 2026-10-01 export: 5 Gold, 5 Blue & Gold, 29 Ribbon, 11 to check — including two guests the older Lei Garland plan had in the VVIP (Gold) group.
+**Scanner integrity:** the card shows **Hand over token: GOLD LEI** and an escort note for special tables; token cards don't auto-dismiss (button: "Token handed over — next scan"); a duplicate (online or offline) says "do not give twice". A pass this phone checked in — confirmed or queued offline — is marked in the cached roster immediately, and roster refreshes keep still-queued passes marked, so a second scan during an outage is flagged instead of shown clean. Gold flash/chime for any honour.
+**Design system:** scanner and wall moved to the CCOnklusyon 2026 palette (navy/royal ground, gold names, Cinzel; fonts load non-blocking with Georgia fallback). Card marks are inline SVG (no emoji on the card). Status colours unchanged. Paper roster stays monochrome but prints the token under the ticket.
+**Verified:** backend S1–S5, token planner tests, scanner H1–H8, print P15; full suite green. Screenshots checked at 390 px.
+
+---
+
 ## 2026-10-01 — Live send survives a bad address; stops if it can't record
 **By:** Claude (pre-send review, user about to run the real send)
 **Found:** `MailApp.sendEmail` throws on a malformed address ("N/A", a typo). The loop didn't catch it, so the run died at that row — and every re-run died at the same row, blocking everyone listed after it. Also: if writing `pass_sent` failed (protected range, strict validation), the email had gone out unrecorded and the run crashed.

@@ -12,12 +12,13 @@ headers, which avoids a CORS preflight). Every response is JSON with a `status` 
 
 `check-in` (POST and GET), `sync`, `recent` and `roster` need the shared access key: send it as `key=…` in the query string, or as `"key"`
 in a POST body. `ping` is open. The key lives only in the Script property `API_KEY` (create it with `generateAccessKey` in the editor) and is
-never committed. **Fail closed:** with no `API_KEY` set, the data endpoints refuse.
+never committed. **Off until set (since 2026-10-01):** with no `API_KEY` property the data endpoints answer without a key (until then they failed closed
+with `KEY_NOT_SET`, which the pages still recognise). Adding the property turns the key on with no redeploy.
 
 | Situation | Response |
 |---|---|
 | Key missing or wrong | `{ "status": "ERROR", "code": "UNAUTHORIZED", "message": "Access key missing or wrong." }` — nothing is read or written |
-| Server has no `API_KEY` | `{ "status": "ERROR", "code": "KEY_NOT_SET", "message": "The server has no access key set (Script property API_KEY)." }` |
+| Server has no `API_KEY` | Request proceeds (open). Servers before `2026-10-01.1` answered `KEY_NOT_SET`. |
 
 Devices receive the key once through a private link ending in `#key=…` (the page stores it and removes it from the address bar) or, on the
 scanner, by pasting it in ⚙️ Settings → Access key. The key is not logged by the script or the scanner's Connection log.
@@ -28,13 +29,14 @@ Request: `{ "action": "checkin", "attendance_code": "12345", "device_id": "Entra
 
 | `status` | Meaning | Extra fields |
 |---|---|---|
-| `SUCCESS` | First valid scan; row written `Checked-In` | `data`: `attendance_code, full_name, club_name, designation, ticket_type, table_allocation, photo_url, checkin_timestamp` |
-| `DUPLICATE` | Already checked in; nothing written | `data`: `full_name, initial_checkin_timestamp, table_allocation, checked_in_by` |
+| `SUCCESS` | First valid scan; row written `Checked-In` | `data`: `attendance_code, full_name, club_name, designation, ticket_type, table_allocation, photo_url, checkin_timestamp, attendee_type, token, special_table` |
+| `DUPLICATE` | Already checked in; nothing written | `data`: `full_name, initial_checkin_timestamp, table_allocation, checked_in_by, attendee_type, token, special_table` |
 | `NOT_FOUND` | Code not in `Master_Attendance` | — |
 | `ERROR` | Bad JSON, missing code, unknown action, or lock timeout (`System busy, retry shortly.`) | `message` |
 
 The sheet write is wrapped in `LockService.getScriptLock()` (10 s wait), so concurrent scans of
-the same code cannot both succeed. A `VIP Pass` success also fires the Telegram alert (skipped
+the same code cannot both succeed. A success that is a `VIP Pass`, at a special table (`SPECIAL_TABLES`), or has a
+`token` also fires the Telegram alert (since 2026-10-01; skipped
 silently if `TELEGRAM_BOT_TOKEN` / `TELEGRAM_CHAT_ID` script properties are unset; a Telegram
 failure never blocks the check-in).
 
@@ -63,8 +65,8 @@ Response: `{ "status": "SUCCESS", "count": n, "attendees": [ { full_name, club_n
 Read-only full attendee list for the scanner's offline cache. **Excludes `email`.** Rows without
 a name or attendance code are skipped.
 
-Response: `{ "status": "SUCCESS", "count": n, "attendees": [ { attendance_code, full_name, club_name, designation, ticket_type, table_allocation, checkin_status } ] }`
-(`checkin_status` is `"Pending"` when the sheet cell is blank.)
+Response: `{ "status": "SUCCESS", "count": n, "attendees": [ { attendance_code, full_name, club_name, designation, ticket_type, table_allocation, checkin_status, attendee_type, token, special_table } ] }`
+(`checkin_status` is `"Pending"` when the sheet cell is blank. `token` is blank when the column is missing or says `none`; `special_table` is a boolean.)
 
 ## `GET ?action=ping` (also accepted via POST)
 

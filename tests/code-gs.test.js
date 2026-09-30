@@ -131,8 +131,11 @@ T4('E15',()=>{ const a=audit([H,Object.assign(good(1,'48201'),{8:'0'}),Object.as
 const T5=(name,fn)=>{try{fn()}catch(e){ok(name+' — threw',false,String(e&&e.message||e))}};
 T5('K1',()=>{ rows=mk(); delete props.API_KEY; fetches=0;
   const rs=[postRaw({action:'checkin',attendance_code:'11111',device_id:'K'},{key:KEY}), getRaw({action:'checkin',attendance_code:'11111',device_id:'K',key:KEY}), getRaw({action:'recent',key:KEY}), getRaw({action:'roster',key:KEY}), postRaw({action:'sync',items:[{action:'checkin',attendance_code:'11111',device_id:'K'}]},{key:KEY})];
-  ok('K1 no key configured on the server: every data endpoint refuses (fail closed)', rs.every(r=>r.status==='ERROR'&&r.code==='KEY_NOT_SET'), rs.map(r=>r.code).join());
-  ok('K1 nothing was written', rows[1][10]===''); props.API_KEY=KEY; });
+  // Changed 2026-10-01: with no key configured the server stays OPEN (same as the live Version 6), so a redeploy can
+  // never lock the door out; the key switches on only when the API_KEY property is added.
+  ok('K1 no key configured on the server: endpoints stay open (no lock-out on deploy)', rs.every(r=>r.status==='SUCCESS'||r.status==='DUPLICATE'), rs.map(r=>r.status).join());
+  ok('K1 ping says the server is not secured', (p=>p.secured===false)(getRaw({action:'ping'})));
+  props.API_KEY=KEY; });
 T5('K2',()=>{ rows=mk(); fetches=0; tgSent.length=0; let all=true; const bad=[];
   [undefined,'','wrong',KEY+'x',KEY.slice(0,-1),KEY.toUpperCase()].forEach(k=>{ const p=k===undefined?{}:{key:k};
     [postRaw({action:'checkin',attendance_code:'22222',device_id:'K'},p), getRaw(Object.assign({action:'checkin',attendance_code:'22222',device_id:'K'},p)), getRaw(Object.assign({action:'recent'},p)), getRaw(Object.assign({action:'roster'},p)), postRaw({action:'sync',items:[{action:'checkin',attendance_code:'22222',device_id:'K'}]},p)]
@@ -162,5 +165,43 @@ T5('K6',()=>{ delete props.API_KEY; logs.length=0;
   const first=props.API_KEY; logs.length=0; const r2=ctx.generateAccessKey();
   ok('K6 never overwrites an existing key and does not print it again', r2.created===false&&props.API_KEY===first&&!logs.some(l=>String(l).includes(first)));
   props.API_KEY=KEY; });
+
+// ---- 2026-10-01: special tables + tokens -> Telegram and scanner data ----------------------------------------------
+const HS=['email','full_name','org','club','desig','ticket','code','qr','table','photo','status','ts','by','pass_sent','pass_sent_timestamp','BATCH','attendee_type','reg_no','token'];
+const R=(name,ticket,code,table,type,token)=>['x@x',name,'','CCO','Role',ticket,code,'',table,'','','','','','','',type,'1',token||''];
+const mkS=()=>[HS.slice(),R('Plain Person','Regular Attendee','41001','Table 5','Club Participant'),R('SL Guest','Regular Attendee','41002',"SL’s",'Student Leaders'),
+  R('Club Adviser','Regular Attendee','41003','Table 3','Club Participant','Ribbon'),R('Dr Gold','VIP Pass','41004','VVIP','VVIP','Gold Lei'),R('Officer','Regular Attendee','41005','41st CCO Officers','Student Leaders')];
+const S=(name,fn)=>{try{fn()}catch(e){ok(name+' — threw',false,String(e&&e.stack||e))}};
+S('S1',()=>{ reset4(); rows=mkS(); delete props.SPECIAL_TABLES;
+  const a=post({action:'checkin',attendance_code:'41001',device_id:'D'});
+  ok('S1 regular table, no token: no Telegram alert', a.status==='SUCCESS'&&tgSent.length===0&&a.data.special_table===false&&a.data.token==='');
+  const b=post({action:'checkin',attendance_code:'41002',device_id:'D'});
+  ok('S1 special table (SL’s, curly apostrophe) alerts even for a Regular Attendee', b.data.special_table===true&&tgSent.length===1&&/SPECIAL TABLE ARRIVAL/.test(tgSent[0].text)&&/Assigned Seat: SL’s/.test(tgSent[0].text), tgSent[0]&&tgSent[0].text);
+  const c=post({action:'checkin',attendance_code:'41003',device_id:'D'});
+  ok('S1 token holder at a regular table alerts the token team', tgSent.length===2&&/TOKEN RECIPIENT ARRIVED/.test(tgSent[1].text)&&/🎖 TOKEN: RIBBON/.test(tgSent[1].text)&&/Token team/.test(tgSent[1].text)&&c.data.token==='Ribbon', tgSent[1]&&tgSent[1].text);
+  const d=post({action:'checkin',attendance_code:'41004',device_id:'D'});
+  ok('S1 VIP with a token: VIP alert plus the token line', tgSent.length===3&&/VIP ARRIVAL DETECTED/.test(tgSent[2].text)&&/🎖 TOKEN: GOLD LEI/.test(tgSent[2].text), tgSent[2]&&tgSent[2].text);
+  post({action:'checkin',attendance_code:'41005',device_id:'D'});
+  ok('S1 41st CCO Officers table is special', tgSent.length===4);
+  const dup=post({action:'checkin',attendance_code:'41004',device_id:'D2'});
+  ok('S1 duplicate scan: no second alert, but the card still gets token + table flags', dup.status==='DUPLICATE'&&tgSent.length===4&&dup.data.token==='Gold Lei'&&dup.data.special_table===true);
+});
+S('S2',()=>{ reset4(); rows=mkS(); props.SPECIAL_TABLES='Table 5';
+  post({action:'checkin',attendance_code:'41001',device_id:'D'}); post({action:'checkin',attendance_code:'41005',device_id:'D'});
+  ok('S2 SPECIAL_TABLES property overrides the list without a redeploy', tgSent.length===1&&/Plain Person/.test(tgSent[0].text));
+  delete props.SPECIAL_TABLES; });
+S('S3',()=>{ reset4(); rows=mkS();
+  const r=get({action:'roster'}); const g=r.attendees.find(x=>x.attendance_code==='41004');
+  ok('S3 roster carries attendee_type, token and special_table for the offline card', g.attendee_type==='VVIP'&&g.token==='Gold Lei'&&g.special_table===true&&r.attendees.find(x=>x.attendance_code==='41001').special_table===false);
+  rows=mk(); const old=get({action:'roster'});
+  ok('S3 a sheet without the new columns still works (blank token, no crash)', old.status==='SUCCESS'&&old.attendees.every(x=>x.token===''));
+});
+S('S4',()=>{ ok('S4 original VIP template unchanged when there is no token or special table', ctx.buildVipAlertText_(vip)===EXPECT); });
+
+S('S5',()=>{ reset4(); rows=mkS(); rows[1][18]='none'; rows[1][8]='Externals';
+  const a=post({action:'checkin',attendance_code:'41001',device_id:'D'});
+  ok('S5 "none" in the token cell = no token; Externals is a special table', a.data.token===''&&a.data.special_table===true&&tgSent.length===1&&!/TOKEN/.test(tgSent[0].text), tgSent[0]&&tgSent[0].text);
+  post({action:'checkin',attendance_code:'41004',device_id:'D'});
+  ok('S5 VIP with a token also tells the token team to bring it', /Token team: bring the GOLD LEI to the Entrance/.test(tgSent[1].text), tgSent[1]&&tgSent[1].text); });
 
 console.log(fail?('\n'+fail+' FAILED'):'\nALL PASS'); process.exit(fail?1:0);

@@ -15,8 +15,13 @@ when it happens.
 - **Concurrency:** every Sheet cell write in `doPost` wrapped in `LockService.getScriptLock()`,
   10s wait window.
 - **Latency target:** sub-3s door triage cycle (scan → confirmation).
-- **VIP alert:** Telegram notification within 3s of a VIP check-in.
-- **Tier colors:** Gold `#B8860B` for VIP Pass, Royal Blue `#1A56DB` for Regular Attendee.
+- **VIP alert:** Telegram notification within 3s of a VIP check-in. Since 2026-10-01 the same alert also fires for anyone at a
+  **special table** (default VVIP, VIP, SL's, Alumni 1, Alumni 2, 41st CCO Officers, Externals; Script property `SPECIAL_TABLES`
+  = comma-separated list overrides it with no redeploy) and for anyone with a **`token`** (Lei Garland: Gold Lei / Blue & Gold Lei /
+  Ribbon — filled by `assignTokens` in RosterImport.gs). The scanner card shows the token to hand over and never shows it twice.
+- **Tier colors:** gold for VIP Pass, royal blue for Regular Attendee. Since 2026-10-01 the scanner and wall use the CCOnklusyon 2026
+  design system (VIP gold `#f1b763`, regular royal `#2a3fb0`/`#3b52c9` on a `#040e3f`/`#060d53` ground, Cinzel) instead of the
+  original `#B8860B` / `#1A56DB` pair — the user asked for the design system. `roster-print.html` stays black-on-white for paper.
 - **Duplicate scans:** must be atomically blocked, never double-counted.
 
 ## Live infrastructure (as confirmed, not assumed)
@@ -36,7 +41,7 @@ when it happens.
 
 ## Access key (added 2026-09-20 — every data request needs it)
 - Stored ONLY in the Script property `API_KEY` (run `generateAccessKey` in the editor to create one). **Never commit it, never paste it in chat.**
-- `check-in`, `sync`, `recent`, `roster` refuse without it (`UNAUTHORIZED`; `KEY_NOT_SET` when the server has none — fail closed). `ping` is open and
+- `check-in`, `sync`, `recent`, `roster` refuse without it (`UNAUTHORIZED`). **Since 2026-10-01 (BACKEND_VERSION `2026-10-01.1`): with no `API_KEY` property the endpoints stay OPEN** (was: fail closed with `KEY_NOT_SET`) — so redeploying on the event eve can't lock out phones that never received a key; add the property to turn the key on. `ping` is open and
   reports `secured` / `authorized`. Details: [`docs/api-contract.md`](./docs/api-contract.md).
 - Devices get it once via a private link ending `#key=…` (stored in `localStorage.cco_access_key`, then stripped from the address bar); the scanner also has
   ⚙️ Settings → Access key. The three pages share one origin, so a laptop opened once covers the wall and the print page. Rotate by editing the property

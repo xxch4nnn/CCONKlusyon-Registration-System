@@ -39,7 +39,7 @@
 
 // Bump on every change you deploy. `ping` reports it, and the scanner shows a warning if the deployed script is older
 // (editing this file in the Apps Script editor changes nothing for the phones until the DEPLOYMENT is moved to a new version).
-const BACKEND_VERSION = '2026-09-20.2';
+const BACKEND_VERSION = '2026-10-01.1';
 
 const SHEET_NAME = 'Master_Attendance';
 const COL = {
@@ -54,8 +54,10 @@ const COL = {
 /**
  * Shared access key. Every data endpoint (check-in, sync, recent, roster) requires it; `ping` stays open so a device can
  * find out whether its key is right. The key lives ONLY in Script Properties (API_KEY) — never in this file or the repo —
- * and each device is given it once (see AGENTS.md). Fail closed: with no key configured the data endpoints refuse.
- * Run `generateAccessKey` once from the editor to create one.
+ * and each device is given it once (see AGENTS.md). OFF until a key exists: with no API_KEY property the endpoints stay
+ * open, exactly like the Version 6 deployment the phones use today, so deploying this file can never lock the door out.
+ * Turn it on only after every device holds the key (HANDOFF item 0), by adding the API_KEY property — no redeploy.
+ * (Until 2026-10-01 this failed closed with KEY_NOT_SET; changed so the event-eve redeploy is zero-risk.)
  */
 const KEY_PROP = 'API_KEY';
 function sameKey_(provided, expected) { // compares every character, so timing doesn't reveal how much matched
@@ -67,7 +69,7 @@ function sameKey_(provided, expected) { // compares every character, so timing d
 /** null when the request may proceed; otherwise the error response to send back. */
 function keyCheck_(provided) {
   const expected = PropertiesService.getScriptProperties().getProperty(KEY_PROP);
-  if (!expected) return { status: 'ERROR', code: 'KEY_NOT_SET', message: 'The server has no access key set (Script property API_KEY).' };
+  if (!expected) return null; // no key configured yet: open (see above)
   if (!sameKey_(provided, expected)) return { status: 'ERROR', code: 'UNAUTHORIZED', message: 'Access key missing or wrong.' };
   return null;
 }
@@ -211,7 +213,7 @@ function handleCheckin_(body, opts) {
 
   // Telegram runs AFTER the lock is released: the HTTP call takes hundreds of ms, and holding the
   // script lock across it would make every other usher's scan wait behind a VIP alert.
-  if (result.status === 'SUCCESS' && result.data.ticket_type === 'VIP Pass') {
+  if (result.status === 'SUCCESS' && needsAlert_(result.data)) {
     let info;
     try {
       info = notifyVipTelegram_(result.data, { delayed: !!(opts && opts.delayed) });
@@ -225,14 +227,50 @@ function handleCheckin_(body, opts) {
   return jsonOut_(result);
 }
 
+// ---- Special tables and tokens (2026-10-01) ---------------------------------------------------------------------------
+// Anyone seated at a special table, or anyone with a `token` (Gold Lei / Blue & Gold Lei / Ribbon — filled by assignTokens
+// in RosterImport.gs), triggers the Telegram alert on check-in and gets a banner on the scanner card. Both extra columns
+// are found by HEADER NAME (they sit after the positional A–M block). Override the table list on the day without a
+// redeploy: Script property SPECIAL_TABLES = comma-separated table names.
+const DEFAULT_SPECIAL_TABLES = ['VVIP', 'VIP', "SL's", 'Alumni 1', 'Alumni 2', '41st CCO Officers', 'Externals'];
+function normTable_(t) { return String(t == null ? '' : t).toLowerCase().replace(/[^a-z0-9]/g, ''); }
+function specialTables_() {
+  let raw = null;
+  try { raw = PropertiesService.getScriptProperties().getProperty('SPECIAL_TABLES'); } catch (e) { /* default */ }
+  const list = raw ? raw.split(',') : DEFAULT_SPECIAL_TABLES;
+  return list.map(normTable_).filter(Boolean);
+}
+function isSpecialTable_(table, list) {
+  const t = normTable_(table);
+  return !!t && (list || specialTables_()).indexOf(t) >= 0;
+}
+function headerIndex_(headerRow) {
+  const idx = {};
+  (headerRow || []).forEach(function (h, i) { const k = String(h).trim(); if (k && idx[k] === undefined) idx[k] = i; });
+  return idx;
+}
+/** "none", "-", "n/a", "no" typed in a token cell = deliberately no token (no banner, no alert). */
+function isNoToken_(v) { return /^\s*(none|no|n\/?a|-+|—|–|0)\s*$/i.test(String(v == null ? '' : v)); }
+/** attendee_type, token and special_table for one row (blank when the columns don't exist). */
+function honors_(row, hdr, tables) {
+  const get = function (name) { return hdr[name] === undefined ? '' : String(row[hdr[name]] == null ? '' : row[hdr[name]]).trim(); };
+  const token = get('token');
+  return { attendee_type: get('attendee_type'), token: isNoToken_(token) ? '' : token, special_table: isSpecialTable_(row[COL.TABLE_ALLOC - 1], tables) };
+}
+/** Does this successful check-in need a Telegram alert? VIP Pass, a special table, or a token to hand over. */
+function needsAlert_(d) { return !!(d && (d.ticket_type === 'VIP Pass' || d.special_table || d.token)); }
+
 /** Sheet lookup + write for one check-in. Caller MUST hold the script lock. Returns a plain object. */
 function processCheckin_(code, deviceId) {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
   const data = sheet.getDataRange().getValues();
+  const hdr = headerIndex_(data[0]);
+  const tables = specialTables_();
 
   for (let r = 1; r < data.length; r++) {
     const row = data[r];
     if (String(row[COL.ATTENDANCE_CODE - 1]).trim() !== code) continue;
+    const h = honors_(row, hdr, tables);
 
     if (row[COL.CHECKIN_STATUS - 1] === 'Checked-In') {
       return {
@@ -242,7 +280,8 @@ function processCheckin_(code, deviceId) {
           full_name: row[COL.FULL_NAME - 1],
           initial_checkin_timestamp: row[COL.CHECKIN_TS - 1],
           table_allocation: row[COL.TABLE_ALLOC - 1],
-          checked_in_by: row[COL.CHECKED_IN_BY - 1]
+          checked_in_by: row[COL.CHECKED_IN_BY - 1],
+          attendee_type: h.attendee_type, token: h.token, special_table: h.special_table
         }
       };
     }
@@ -263,7 +302,8 @@ function processCheckin_(code, deviceId) {
         ticket_type: row[COL.TICKET_TYPE - 1],
         table_allocation: row[COL.TABLE_ALLOC - 1],
         photo_url: row[COL.PHOTO_URL - 1],
-        checkin_timestamp: nowIso
+        checkin_timestamp: nowIso,
+        attendee_type: h.attendee_type, token: h.token, special_table: h.special_table
       }
     };
   }
@@ -304,11 +344,14 @@ function handleRecent_(limit) {
 function handleRoster_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
   const data = sheet.getDataRange().getValues();
+  const hdr = headerIndex_(data[0]);
+  const tables = specialTables_();
   const attendees = [];
 
   for (let r = 1; r < data.length; r++) {
     const row = data[r];
     if (!row[COL.FULL_NAME - 1] || !row[COL.ATTENDANCE_CODE - 1]) continue; // skip empty/uncredentialed rows
+    const h = honors_(row, hdr, tables);
     attendees.push({
       attendance_code: String(row[COL.ATTENDANCE_CODE - 1]),
       full_name: row[COL.FULL_NAME - 1],
@@ -316,7 +359,8 @@ function handleRoster_() {
       designation: row[COL.DESIGNATION - 1],
       ticket_type: row[COL.TICKET_TYPE - 1],
       table_allocation: row[COL.TABLE_ALLOC - 1],
-      checkin_status: row[COL.CHECKIN_STATUS - 1] || 'Pending'
+      checkin_status: row[COL.CHECKIN_STATUS - 1] || 'Pending',
+      attendee_type: h.attendee_type, token: h.token, special_table: h.special_table
     });
   }
 
@@ -394,13 +438,21 @@ function buildVipAlertText_(a, opts) {
   const blank = function (v) { return v ? String(v) : '—'; };
   const club = a.club_name ? ' (' + a.club_name + ')' : '';
   const time = Utilities.formatDate(new Date(), 'GMT+8', 'h:mm:ss a');
-  return '⭐ VIP ARRIVAL DETECTED ⭐\n' +
+  const vip = a.ticket_type === 'VIP Pass' || (!a.special_table && !a.token); // no flags at all = the original VIP alert
+  const title = vip ? '⭐ VIP ARRIVAL DETECTED ⭐' : a.special_table ? '⭐ SPECIAL TABLE ARRIVAL ⭐' : '🎖 TOKEN RECIPIENT ARRIVED';
+  const action = (vip || a.special_table)
+    ? '👉 Designated Escort: Usher Lead please acknowledge and proceed to Entrance.' +
+      (a.token ? '\n👉 Token team: bring the ' + String(a.token).toUpperCase() + ' to the Entrance.' : '')
+    : '👉 Token team: please hand it over at the Entrance.';
+  return title + '\n' +
     'Name: ' + blank(a.full_name) + '\n' +
     'Role: ' + blank(a.designation) + club + '\n' +
+    (a.attendee_type && !vip ? 'Type: ' + a.attendee_type + '\n' : '') +
     'Assigned Seat: ' + seatText_(a.table_allocation) + '\n' +
+    (a.token ? '🎖 TOKEN: ' + String(a.token).toUpperCase() + '\n' : '') +
     'Time: ' + time + '\n' +
     (opts && opts.delayed ? '⏱ Scanned while offline — the guest may have arrived a few minutes ago.\n' : '') +
-    '\n👉 Designated Escort: Usher Lead please acknowledge and proceed to Entrance.';
+    '\n' + action;
 }
 
 // ---- Alert timing log (Story 4.1.4 / QA Gate 3: "VIP alert lands within 3 s of the scan") ------------------------------

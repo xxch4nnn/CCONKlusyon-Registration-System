@@ -4,6 +4,9 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>CCOnklusyon 2026 — Live Arrivals</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap">
 <!--
   CCOnklusyon Registration & Check-in System — Projector Live Wall (D-5)
   Epic 5 / Stories 5.1-5.2 (see docs/mvp-spec.md Component B and docs/sprint-backlog.md)
@@ -23,7 +26,7 @@
     2 Recent — everyone who has arrived, newest first: hero banner (3 latest, large) + grid of the rest.
     3 Attendance — the SECRETARIAT view: checked in / expected with a progress bar, VIP vs Regular, who has not
       arrived yet, and a per-club breakdown. Built from the roster feed only; shows no names, PINs or emails.
-  Cards: VIP = gold #B8860B border/glow/"VIP PASS" badge; Regular = royal blue #1A56DB border/"DELEGATE".
+  Cards: VIP = gold #f1b763 border/glow/"VIP PASS" badge; Regular = royal blue #3b52c9 border/"DELEGATE" (design system, 2026-10-01).
   Photos: VIPs use photo_url. Regular attendees have none by design, so CONFIG.SHOWCASE_MODE decides
   (Stage 2 §6.5.2): 1 = VIP-only spotlight (regulars only appear on Recent) · 2 = regulars get a name card, no
   avatar · 3 = regulars get a monogram avatar. A VIP with no working photo always gets a monogram.
@@ -39,8 +42,11 @@
 -->
 <style>
   :root {
-    --gold: #B8860B; --blue: #1A56DB; --serif: Georgia, "Times New Roman", serif;
-    --bg: #070A12; --panel: #10151F; --text: #F3F4F6; --muted: #8B95A7;
+    /* CCOnklusyon 2026 design system (2026-10-01): royal-blue ground, gold names/accents, ink text, Cinzel. */
+    --royal: #060d53; --navy: #040e3f; --gold-hi: #fcdf93; --gold-deep: #c98d45;
+    --gold: #f1b763; --blue: #3b52c9; --serif: 'Cinzel', Georgia, "Times New Roman", serif;
+    --smallcaps: 'Cormorant Garamond', Georgia, serif;
+    --bg: var(--navy); --panel: var(--royal); --text: #f5ffff; --muted: #a9b3d8;
     --ease: ease-out;
   }
   /* Everything is sized in rem and rem tracks the viewport width, so 1080p and 4K look identical. */
@@ -48,7 +54,7 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
   body {
-    background: radial-gradient(ellipse at 20% 0%, #14203a 0%, var(--bg) 55%);
+    background: radial-gradient(ellipse at 20% 0%, #0c1a78 0%, var(--bg) 58%);
     color: var(--text); overflow: hidden; cursor: default;
     font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
   }
@@ -59,8 +65,8 @@
 
   /* ---- Header ---- */
   header { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; gap: 2rem; }
-  .brand h1 { margin: 0; font-size: 2.6rem; font-weight: 800; letter-spacing: .04em; }
-  .brand h1 span { color: #F5C542; }
+  .brand h1 { margin: 0; font-family: var(--serif); font-size: 2.6rem; font-weight: 700; letter-spacing: .06em; }
+  .brand h1 span { color: var(--gold-hi); }
   .brand p { margin: .15rem 0 0; font-size: 1.05rem; color: var(--muted); letter-spacing: .2em; text-transform: uppercase; }
   .stats { display: flex; align-items: center; gap: 1.6rem; }
   .count { text-align: right; line-height: 1; }
@@ -77,8 +83,8 @@
   /* ---- Tabs + views ---- */
   .tabs { display: flex; gap: .6rem; }
   .tabs button { font: inherit; font-size: 1rem; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--muted);
-    background: transparent; border: 1px solid #263045; border-radius: 999px; padding: .5rem 1.3rem; cursor: pointer; }
-  .tabs button[aria-selected="true"] { color: var(--text); background: #1C2740; border-color: #3B5BDB; }
+    background: transparent; border: 1px solid rgba(201,141,69,.4); border-radius: 999px; padding: .5rem 1.3rem; cursor: pointer; }
+  .tabs button[aria-selected="true"] { color: var(--navy); background: var(--gold); border-color: var(--gold); }
   .tabs kbd { font: inherit; opacity: .55; margin-right: .5rem; }
   /* Tab 1 is what the audience sees: no header, no tab bar, no counters. Keys 1/2 still work. */
   body[data-tab="spotlight"] header { display: none; }
@@ -87,31 +93,31 @@
   /* ---- Spotlight: one attendee, full screen ---- */
   #viewSpotlight { position: relative; align-items: center; justify-content: center; }
   #ambient { text-align: center; animation: spotEnter 700ms var(--ease); }
-  #ambient .eyebrow { margin: 0; font-size: 1.7rem; letter-spacing: .5em; text-transform: uppercase; color: #C9B26B; }
-  #ambient h2 { margin: 1.2rem 0 1.6rem; font: 400 8.2rem/1.05 var(--serif); letter-spacing: .01em; color: var(--text); }
+  #ambient .eyebrow { margin: 0; font-size: 1.7rem; letter-spacing: .5em; text-transform: uppercase; color: var(--gold); font-family: var(--smallcaps); }
+  #ambient h2 { margin: 1.2rem 0 1.6rem; font: 700 8.2rem/1.05 var(--serif); letter-spacing: .03em; color: var(--gold-hi); }
   #ambient .rule { width: 14rem; height: 2px; margin: 0 auto 1.6rem; background: linear-gradient(90deg, transparent, var(--gold), transparent); }
   #ambient .org { margin: 0; font-size: 1.7rem; letter-spacing: .3em; text-transform: uppercase; color: var(--muted); }
-  .stage-mark { position: absolute; left: 0; right: 0; bottom: 1rem; text-align: center; font-size: 1.1rem; letter-spacing: .45em; text-transform: uppercase; color: #5C6678; }
+  .stage-mark { position: absolute; left: 0; right: 0; bottom: 1rem; text-align: center; font-size: 1.1rem; letter-spacing: .45em; text-transform: uppercase; color: #6d78a8; }
   #stageDot { position: fixed; right: 1.4rem; bottom: 1.4rem; width: .9rem; height: .9rem; border-radius: 50%; background: #F59E0B; box-shadow: 0 0 .8rem rgba(245,158,11,.7); }
   body:not([data-tab="spotlight"]) #stageDot { display: none; } /* the other tabs spell the status out */
   #spotStage { display: flex; align-items: center; justify-content: center; width: 100%; }
   .card.spot { flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 1rem;
     width: min(80rem, 94%); padding: 3.4rem 5rem 3rem; border-width: 5px; border-radius: 2rem; animation: spotEnter 400ms var(--ease); }
-  .card.spot.vip { box-shadow: 0 0 60px rgba(184,134,11,.45); }
+  .card.spot.vip { box-shadow: 0 0 60px rgba(241,183,99,.45); }
   .spot .badge { top: 1.4rem; right: 1.6rem; font-size: 1.2rem; padding: .5rem 1.4rem; }
   .spot .avatar-wrap, .spot .avatar { width: 15rem; height: 15rem; }
   .spot .avatar { border-radius: 50%; border: 6px solid var(--blue); }
   .spot.vip .avatar { border-color: var(--gold); }
-  .spot .welcome { font-size: 1.4rem; font-weight: 700; letter-spacing: .5em; text-transform: uppercase; color: #6E93F0; }
-  .spot.vip .welcome { color: #D9B44A; }
-  .spot .name { font-family: var(--serif); font-weight: 700; font-size: 5.8rem; line-height: 1.08; text-wrap: balance; }
+  .spot .welcome { font-size: 1.4rem; font-weight: 700; letter-spacing: .5em; text-transform: uppercase; color: #9fb2ff; }
+  .spot.vip .welcome { color: var(--gold); }
+  .spot .name { font-family: var(--serif); font-weight: 700; font-size: 5.8rem; line-height: 1.08; text-wrap: balance; color: var(--gold-hi); }
   .spot.typo .name { font-size: 6.2rem; }
   .spot .rule { width: 12rem; height: 2px; background: var(--blue); }
   .spot.vip .rule { background: var(--gold); }
-  .spot .role { font-size: 2.4rem; font-weight: 600; color: #DDE2EC; }
+  .spot .role { font-size: 2.4rem; font-weight: 600; color: #e4e9ff; }
   .spot .club { font-size: 1.7rem; letter-spacing: .18em; text-transform: uppercase; color: var(--muted); }
   .spot .table { display: flex; flex-direction: column; align-items: center; gap: .2rem; margin-top: 1rem; padding: .9rem 3.2rem;
-    border: 1px solid rgba(255,255,255,.16); border-radius: 1.2rem; background: rgba(255,255,255,.06); }
+    border: 1px solid var(--gold-deep); border-radius: 1.2rem; background: rgba(4,14,63,.6); }
   .spot .table .k { font-size: 1.3rem; letter-spacing: .3em; text-transform: uppercase; color: var(--muted); }
   .spot .table .v { font-size: 3rem; font-weight: 800; }
   @keyframes spotEnter { from { opacity: 0; transform: scale(.94); } to { opacity: 1; transform: none; } }
@@ -125,20 +131,20 @@
   .tele-total b { font-size: 7.5rem; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; }
   .tele-total .sep { font-size: 4rem; color: var(--muted); }
   .tele-total .lbl { font-size: 1.6rem; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); margin-left: .6rem; }
-  #telePct { margin-left: auto; font-size: 4.4rem; font-weight: 800; color: #6E93F0; font-variant-numeric: tabular-nums; }
-  .bar { height: 1.7rem; border-radius: 999px; background: #1C2740; overflow: hidden; }
-  .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--blue), #4B7BF5); transition: width .6s ease-out; }
+  #telePct { margin-left: auto; font-size: 4.4rem; font-weight: 800; color: var(--gold); font-variant-numeric: tabular-nums; }
+  .bar { height: 1.7rem; border-radius: 999px; background: #0f1c6e; overflow: hidden; }
+  .bar i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--gold-deep), var(--gold-hi)); transition: width .6s ease-out; }
   .stats3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; }
-  .stat { display: flex; flex-direction: column; gap: .3rem; padding: 1.1rem 1.5rem; border-radius: 1rem; background: var(--panel); border: 1px solid #263045; }
+  .stat { display: flex; flex-direction: column; gap: .3rem; padding: 1.1rem 1.5rem; border-radius: 1rem; background: var(--panel); border: 1px solid rgba(201,141,69,.3); }
   .stat.vip { border-color: var(--gold); }
   .stat .k { font-size: 1.05rem; letter-spacing: .2em; text-transform: uppercase; color: var(--muted); }
   .stat .v { font-size: 3rem; font-weight: 800; font-variant-numeric: tabular-nums; }
   .clubs { display: grid; grid-template-columns: repeat(auto-fill, minmax(31rem, 1fr)); gap: .5rem 1.8rem; }
-  .club-row { display: grid; grid-template-columns: 1fr auto; column-gap: 1rem; row-gap: .3rem; padding: .55rem 0; border-bottom: 1px solid #1B2436; }
+  .club-row { display: grid; grid-template-columns: 1fr auto; column-gap: 1rem; row-gap: .3rem; padding: .55rem 0; border-bottom: 1px solid rgba(201,141,69,.18); }
   .club-row .cn { font-size: 1.15rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .club-row .cc { font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; }
-  .club-row .mini { grid-column: 1 / -1; height: .35rem; border-radius: 999px; background: #1C2740; overflow: hidden; }
-  .club-row .mini i { display: block; height: 100%; background: #4B7BF5; }
+  .club-row .mini { grid-column: 1 / -1; height: .35rem; border-radius: 999px; background: #0f1c6e; overflow: hidden; }
+  .club-row .mini i { display: block; height: 100%; background: var(--gold); }
   .club-row.full .mini i { background: #22C55E; }
   #teleStatus { margin: 0; font-size: 1.15rem; font-weight: 600; color: #F59E0B; }
 
@@ -152,14 +158,14 @@
     position: relative; display: flex; background: var(--panel); border-radius: 1.1rem; overflow: hidden;
     border: 3px solid var(--blue);
   }
-  .card.vip { border-color: var(--gold); box-shadow: 0 0 15px rgba(184,134,11,.4); }
+  .card.vip { border-color: var(--gold); box-shadow: 0 0 15px rgba(241,183,99,.4); }
   .badge { position: absolute; top: .8rem; right: .8rem; padding: .3rem .8rem; border-radius: 999px; font-size: .8rem;
     font-weight: 800; letter-spacing: .12em; color: #fff; background: var(--blue); }
-  .card.vip .badge { background: var(--gold); }
+  .card.vip .badge { background: var(--gold); color: var(--navy); }
   .avatar { flex: 0 0 auto; display: block; object-fit: cover; }
   .avatar-wrap { flex: 0 0 auto; display: flex; align-items: center; justify-content: center; }
-  .name { font-weight: 800; line-height: 1.1; overflow-wrap: anywhere; }
-  .meta { color: #C7CEDA; }
+  .name { font-family: var(--serif); font-weight: 700; line-height: 1.1; overflow-wrap: anywhere; color: var(--gold-hi); }
+  .meta { color: #cfd6f5; }
   .seat { display: inline-block; font-weight: 700; background: rgba(255,255,255,.09); border-radius: 999px; }
 
   .card.hero { flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 1.6rem 1.4rem 1.4rem; gap: .5rem; min-height: 19rem; }
@@ -169,8 +175,8 @@
   .hero .name { font-size: 2.2rem; }
   .hero .meta { font-size: 1.15rem; }
   .hero .seat { font-size: 1.2rem; padding: .35rem 1.1rem; margin-top: .4rem; }
-  .hero .welcome { font-size: .95rem; letter-spacing: .22em; text-transform: uppercase; color: var(--blue); font-weight: 800; }
-  .hero.vip .welcome { color: #F5C542; }
+  .hero .welcome { font-size: .95rem; letter-spacing: .22em; text-transform: uppercase; color: #9fb2ff; font-weight: 800; }
+  .hero.vip .welcome { color: var(--gold); }
   .hero.typo .name { font-size: 2.9rem; }
 
   /* ---- Grid: everyone else ---- */
@@ -194,7 +200,7 @@
 
   /* ---- Empty state ---- */
   #empty { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .6rem; text-align: center; color: var(--muted); }
-  #empty h2 { margin: 0; font-size: 3.2rem; color: var(--text); }
+  #empty h2 { margin: 0; font-family: var(--serif); font-size: 3.2rem; color: var(--gold-hi); }
   #empty p { margin: 0; font-size: 1.4rem; letter-spacing: .12em; text-transform: uppercase; }
   #empty .pulse { animation: breathe 3s ease-in-out infinite; }
   @keyframes breathe { 50% { opacity: .55; } }
@@ -302,8 +308,8 @@
     SCROLL_PAUSE_MS: 3500
   };
   const TIER = {
-    'VIP Pass': { cls: 'vip', badge: 'VIP PASS', color: '#B8860B' },
-    'Regular Attendee': { cls: 'reg', badge: 'DELEGATE', color: '#1A56DB' }
+    'VIP Pass': { cls: 'vip', badge: 'VIP PASS', color: '#f1b763' },
+    'Regular Attendee': { cls: 'reg', badge: 'DELEGATE', color: '#3b52c9' }
   };
 
   const $ = function (id) { return document.getElementById(id); };

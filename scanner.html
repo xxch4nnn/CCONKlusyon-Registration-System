@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-<meta name="theme-color" content="#0B0E14">
+<meta name="theme-color" content="#040e3f">
 <title>CCOnklusyon Usher Scanner</title>
 <!--
   CCOnklusyon Registration & Check-in System — Usher Scanner PWA (D-2)
@@ -29,12 +29,22 @@
   googleusercontent redirect automatically) — no special redirect code needed here.
 -->
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<!-- CCOnklusyon 2026 design system: Cinzel (display) + Cormorant Garamond (small caps). Loaded without blocking:
+     on a slow venue connection the scanner renders at once in the Georgia fallback and swaps in when the fonts land. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" media="print" onload="this.media='all'" href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;700;800&family=Cormorant+Garamond:wght@500;600;700&display=swap">
 <style>
+  /* CCOnklusyon 2026 design system (2026-10-01): royal-blue ground, gold for names and accents, ink text, Cinzel
+     display type. Status colours (green / amber / red) stay as they were — they are what ushers read at a glance. */
   :root {
-    --gold: #B8860B; --blue: #1A56DB;
+    --royal: #060d53; --navy: #040e3f; --gold-hi: #fcdf93; --gold: #f1b763; --gold-deep: #c98d45; --ink: #f5ffff;
+    --blue: #2a3fb0;
     --green: #16A34A; --amber: #D97706; --red: #DC2626;
-    --bg: #0B0E14; --panel: #151A24; --panel-2: #1D2431; --line: #2A3142;
-    --text: #F3F4F6; --muted: #9CA3AF;
+    --bg: var(--navy); --panel: var(--royal); --panel-2: #0f1c6e; --line: rgba(201,141,69,.32);
+    --text: var(--ink); --muted: #aeb8dc;
+    --display: 'Cinzel', Georgia, 'Times New Roman', serif;
+    --smallcaps: 'Cormorant Garamond', Georgia, serif;
     --ease: cubic-bezier(.22,.61,.36,1);
   }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
@@ -60,7 +70,7 @@
   }
   #offlineBanner:not([hidden]) + #topbar { padding-top: 6px; }
   .station { display: flex; align-items: center; gap: 7px; min-width: 0; flex: 1 1 auto; font-weight: 700; }
-  .station b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+  .station b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-family: var(--display); letter-spacing: .06em; color: var(--gold-hi); }
   .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--green); flex: 0 0 auto;
     box-shadow: 0 0 0 0 rgba(22,163,74,.6); animation: dotPulse 2.4s ease-out infinite; }
   .dot.warn { background: var(--amber); box-shadow: 0 0 0 0 rgba(217,119,6,.6); }
@@ -93,7 +103,7 @@
   #readerPaused {
     position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center;
     gap: 6px; text-align: center; padding: 24px; color: var(--muted); font-size: 14px; line-height: 1.5;
-    background: radial-gradient(circle at 50% 40%, #1a2130, var(--bg) 70%);
+    background: radial-gradient(circle at 50% 40%, var(--royal), var(--bg) 70%);
   }
   #readerPaused .big { font-size: 40px; }
 
@@ -113,7 +123,7 @@
   .reticle.ok i { border-color: var(--green); }
   .reticle.dup i { border-color: var(--amber); }
   .reticle.err i { border-color: var(--red); }
-  .reticle.vip i { border-color: #FBBF24; }
+  .reticle.vip i { border-color: var(--gold); }
   .reticle.pulse i { animation: cornerPop .55s var(--ease); }
   @keyframes cornerPop { 40% { transform: scale(1.35); } }
   .reticle.locked .scanline { opacity: 0; }
@@ -148,8 +158,8 @@
   .dock-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 10px; }
   .btn { padding: 15px 10px; border-radius: 12px; font-weight: 700; font-size: 15px; transition: transform .12s, background .2s; }
   .btn:active { transform: scale(.97); }
-  .btn.secondary { background: #374151; }
-  .btn.primary { background: var(--blue); }
+  .btn.secondary { background: var(--panel-2); border: 1px solid var(--line); }
+  .btn.primary { background: var(--gold); color: var(--navy); }
   .btn:disabled { opacity: .55; }
   #manualPanel { display: flex; flex-direction: column; gap: 8px; animation: rise .25s var(--ease); }
   .manual-row { display: flex; gap: 10px; }
@@ -158,11 +168,13 @@
   #nameResults { max-height: 34dvh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
   button.nr { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 2px 8px; text-align: left; padding: 10px 12px;
     border-radius: 12px; border: 1px solid #374151; background: var(--bg); color: var(--text); }
-  .nr .n, .nc .n { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; }
+  .nr .n, .nc .n { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; font-family: var(--display); color: var(--gold-hi); letter-spacing: .02em; }
   .nr .s, .nc .s { font-size: 12px; color: var(--muted); }
   .nr .s { grid-column: 1; }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #374151; color: #E5E7EB; white-space: nowrap; }
-  .tag.vip { background: #7A5A06; color: #FDE68A; }
+  .tag.vip { background: var(--gold); color: var(--navy); }
+  .tag.tok { background: var(--gold-hi); color: var(--navy); }
+  .tag.sp { background: transparent; color: var(--gold-hi); box-shadow: inset 0 0 0 1px var(--gold-deep); }
   .tag.in { background: #78350F; color: #FDE68A; }
   .nmsg { font-size: 12px; color: var(--muted); padding: 6px 4px; }
   .nc { display: flex; flex-direction: column; gap: 6px; padding: 12px; border-radius: 12px; border: 1px solid #374151; background: var(--bg); }
@@ -172,8 +184,8 @@
   @keyframes rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
   #manualCode { flex: 1; min-width: 0; font-size: 22px; letter-spacing: 4px; padding: 12px; border-radius: 12px;
     border: 1px solid #374151; background: var(--bg); color: var(--text); text-align: center; }
-  #manualCode:focus { outline: 2px solid var(--blue); border-color: transparent; }
-  #manualSubmit { flex: 0 0 auto; padding: 0 20px; background: var(--blue); border-radius: 12px; font-weight: 700; }
+  #manualCode:focus { outline: 2px solid var(--gold); border-color: transparent; }
+  #manualSubmit { flex: 0 0 auto; padding: 0 20px; background: var(--gold); color: var(--navy); border-radius: 12px; font-weight: 700; }
 
   /* Short screens (landscape phones, small devices): tighten the chrome so the camera keeps room. */
   @media (max-height: 560px) {
@@ -193,34 +205,49 @@
   #flash.green { background: radial-gradient(circle at 50% 40%, var(--green), transparent 74%); }
   #flash.amber { background: radial-gradient(circle at 50% 40%, var(--amber), transparent 74%); }
   #flash.red   { background: radial-gradient(circle at 50% 40%, var(--red), transparent 74%); }
-  #flash.gold  { background: radial-gradient(circle at 50% 40%, #FBBF24, transparent 74%); }
+  #flash.gold  { background: radial-gradient(circle at 50% 40%, var(--gold), transparent 74%); }
 
   /* ---- Result modal (Story 3.3.2 / feedback layer) ---- */
   #resultModal { position: fixed; inset: 0; z-index: 40; display: flex; align-items: center; justify-content: center;
     background: rgba(0,0,0,0.6); padding: 16px; animation: fadeIn .18s ease-out; }
   @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
   .card { position: relative; width: 100%; max-width: 420px; max-height: calc(100dvh - 32px); overflow-y: auto;
-    background: #fff; color: #111827; border-radius: 18px; text-align: center; animation: cardIn 240ms var(--ease); }
+    background: linear-gradient(180deg, var(--royal), var(--navy)); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 22px; text-align: center; animation: cardIn 240ms var(--ease); }
   @keyframes cardIn { from { opacity: 0; transform: translateY(18px) scale(.96); } to { opacity: 1; transform: none; } }
   .card.duplicate { animation: cardIn 240ms var(--ease), dupPulse 900ms ease-in-out 1; border: 3px solid var(--amber); }
   @keyframes dupPulse { 0%,100% { box-shadow: 0 0 0 0 rgba(217,119,6,0); } 30% { box-shadow: 0 0 0 10px rgba(217,119,6,.35); } 60% { box-shadow: 0 0 0 0 rgba(217,119,6,0); } }
-  .card.vip { box-shadow: 0 0 0 3px #FBBF24, 0 0 34px rgba(184,134,11,.55); }
-  .card .tier-bar { padding: 10px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase; font-size: 13px; color: #fff; }
-  .card .tier-bar.duplicate-bar { background: var(--amber) !important; }
-  .dismiss-bar { height: 4px; background: rgba(0,0,0,.12); overflow: hidden; }
-  .dismiss-bar::after { content: ''; display: block; height: 100%; width: 100%; background: #111827;
+  .card.vip { border-color: var(--gold); box-shadow: 0 0 0 2px var(--gold), 0 0 38px rgba(241,183,99,.45); }
+  .card.honor:not(.vip):not(.duplicate) { border-color: var(--gold-deep); box-shadow: 0 0 0 1px var(--gold-deep), 0 0 26px rgba(201,141,69,.35); }
+  .card .tier-bar { padding: 10px; font-family: var(--display); font-weight: 700; letter-spacing: .16em; text-transform: uppercase; font-size: 13px; color: var(--ink); }
+  .card .tier-bar.on-gold { color: var(--navy); }
+  .card .tier-bar.duplicate-bar { background: var(--amber) !important; color: #1A1200; }
+  .dismiss-bar { height: 4px; background: rgba(255,255,255,.1); overflow: hidden; }
+  .dismiss-bar::after { content: ''; display: block; height: 100%; width: 100%; background: var(--gold);
     transform-origin: left; animation: dismissBar linear forwards; animation-duration: inherit; }
   @keyframes dismissBar { to { transform: scaleX(0); } }
   .card .body { padding: 20px 18px 22px; }
-  .card .warn-icon, .card .vip-star { font-size: 30px; line-height: 1; margin-bottom: 4px; }
-  .card .name { font-size: 24px; font-weight: 800; margin: 0 0 4px; overflow-wrap: anywhere; }
-  .card .sub { font-size: 14px; color: #4B5563; margin: 0 0 14px; }
-  .card .seat { display: inline-block; padding: 7px 18px; border-radius: 20px; background: #F3F4F6; font-size: 14px; font-weight: 700; color: #111827; }
-  .card .msg { font-size: 17px; font-weight: 800; margin: 0 0 6px; }
-  .card .first-seen { display: inline-block; margin-top: 12px; padding: 6px 14px; border-radius: 20px; background: #FEF3C7; color: #92400E; font-size: 12px; font-weight: 700; }
-  .card .offline-note { display: block; margin-top: 14px; font-size: 12px; color: #92400E; background: #FEF3C7; border-radius: 8px; padding: 8px 10px; }
+  .card .mark { display: block; width: 30px; height: 30px; margin: 0 auto 6px; }
+  .card .msg { font-family: var(--display); font-size: 17px; font-weight: 800; letter-spacing: .1em; margin: 0 0 8px; }
+  .card .name { font-family: var(--display); font-size: 26px; font-weight: 700; line-height: 1.15; margin: 0 0 6px; color: var(--gold-hi); overflow-wrap: anywhere; }
+  .card .sub { font-size: 14px; color: var(--muted); margin: 0 0 14px; }
+  .card .seat { display: inline-block; padding: 8px 18px; border-radius: 999px; background: var(--navy); box-shadow: inset 0 0 0 1px var(--gold-deep); font-size: 15px; font-weight: 700; color: var(--ink); }
+  .card .first-seen { display: inline-block; margin-top: 12px; padding: 6px 14px; border-radius: 20px; background: rgba(217,119,6,.18); color: #FCD34D; font-size: 12px; font-weight: 700; }
+  .card .offline-note { display: block; margin-top: 14px; font-size: 12px; color: #FDE68A; background: rgba(217,119,6,.16); border: 1px solid rgba(217,119,6,.45); border-radius: 10px; padding: 8px 10px; text-align: left; }
   .card.error .body { padding-top: 26px; }
-  .card button.close { display: block; width: calc(100% - 36px); margin: 0 18px 18px; padding: 14px; border-radius: 12px; background: #111827; color: #fff; font-weight: 700; }
+  .card button.close { display: block; width: calc(100% - 36px); margin: 0 18px 18px; padding: 14px; border-radius: 14px; background: var(--gold); color: var(--navy); font-weight: 800; letter-spacing: .04em; }
+  /* Honours (2026-10-01): what the door must DO for this guest — hand over a token, escort to a special table. */
+  .card .honors { display: flex; flex-direction: column; gap: 8px; margin: 16px 0 0; }
+  .card .token { border-radius: 14px; padding: 10px 12px; color: var(--navy); background: var(--gold-hi); }
+  .card .token.t-gold { background: linear-gradient(135deg, var(--gold-hi), var(--gold)); }
+  .card .token.t-bluegold { background: linear-gradient(135deg, var(--gold-hi) 0 50%, #9fb2ff 50% 100%); }
+  .card .token.t-ribbon { background: var(--ink); }
+  .card .token small { display: block; font-family: var(--smallcaps); font-variant: small-caps; font-size: 15px; font-weight: 700; letter-spacing: .08em; }
+  .card .token b { display: block; font-family: var(--display); font-size: 22px; letter-spacing: .08em; text-transform: uppercase; }
+  .card .token.given { background: transparent; color: var(--muted); box-shadow: inset 0 0 0 1px var(--line); }
+  .card .special { border-radius: 14px; padding: 9px 12px; box-shadow: inset 0 0 0 1px var(--gold); color: var(--gold-hi);
+    font-family: var(--smallcaps); font-variant: small-caps; font-size: 17px; font-weight: 700; letter-spacing: .06em; }
+  .card .passcode { margin: -2px 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .12em; color: var(--muted); }
 
   /* ---- Settings sheet ---- */
   #settingsBackdrop { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.55); animation: fadeIn .18s ease-out; }
@@ -229,30 +256,29 @@
     animation: sheetUp .28s var(--ease); max-width: 560px; margin: 0 auto; }
   @keyframes sheetUp { from { transform: translateY(100%); } to { transform: none; } }
   .grab { width: 40px; height: 4px; border-radius: 2px; background: #374151; margin: 4px auto 12px; }
-  .sheet-title { font-size: 15px; font-weight: 800; margin: 0 0 8px; }
+  .sheet-title { font-size: 15px; font-weight: 700; margin: 0 0 8px; font-family: var(--display); color: var(--gold-hi); letter-spacing: .05em; }
   .setting { padding: 12px 0; border-top: 1px solid var(--line); }
   .setting:first-of-type { border-top: none; }
   .setting .label { font-size: 13px; font-weight: 700; margin-bottom: 8px; }
   .seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
   .seg button { padding: 11px 6px; border-radius: 10px; background: var(--panel-2); font-weight: 700; font-size: 13px; color: var(--muted); }
-  .seg button[aria-pressed="true"] { background: var(--blue); color: #fff; }
+  .seg button[aria-pressed="true"] { background: var(--gold); color: var(--navy); }
   .sheet-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 4px; }
   .sheet-actions .btn { padding: 12px 8px; font-size: 13px; background: var(--panel-2); }
   .sheet-actions .wide { grid-column: 1 / -1; }
   #busy { bottom: 54px; display: flex; align-items: center; gap: 8px; background: rgba(21,26,36,.94); border: 1px solid var(--line); }
   .spin { width: 12px; height: 12px; border-radius: 50%; border: 2px solid #4B5563; border-top-color: #4ADE80; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .card .passcode { margin: -2px 0 10px; font-size: 12px; font-weight: 700; letter-spacing: .08em; color: #6B7280; }
 
   /* ---- Station name gate: mandatory, cannot be dismissed on first run ---- */
   #stationGate { position: fixed; inset: 0; z-index: 70; display: flex; align-items: center; justify-content: center; padding: 20px;
     background: rgba(7,10,18,.94); backdrop-filter: blur(6px); }
   .gate-card { width: 100%; max-width: 380px; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 24px 20px; text-align: center; }
   .gate-card .gate-icon { font-size: 34px; }
-  .gate-card h2 { margin: 6px 0 8px; font-size: 20px; }
+  .gate-card h2 { margin: 6px 0 8px; font-size: 20px; font-family: var(--display); color: var(--gold-hi); letter-spacing: .04em; }
   .gate-card p { margin: 0 0 16px; font-size: 13px; color: var(--muted); line-height: 1.5; }
   #stationInput { width: 100%; font-size: 20px; padding: 14px; border-radius: 12px; border: 1px solid #374151; background: var(--bg); color: var(--text); text-align: center; }
-  #stationInput:focus { outline: 2px solid var(--blue); border-color: transparent; }
+  #stationInput:focus { outline: 2px solid var(--gold); border-color: transparent; }
   .gate-err { margin: 10px 0 0; font-size: 12px; color: #FCA5A5; }
   .gate-card .btn { width: 100%; margin-top: 14px; }
   #menuBtn { position: relative; }
@@ -261,7 +287,7 @@
   .tiny { color: var(--muted); font-size: 11px; margin-top: 10px; word-break: break-all; }
   .keyrow { display: flex; gap: 8px; }
   .keyrow input { flex: 1; min-width: 0; padding: 12px; border-radius: 12px; border: 1px solid #374151; background: var(--bg); color: var(--text); }
-  .keyrow .btn { flex: 0 0 auto; padding: 0 18px; background: var(--blue); }
+  .keyrow .btn { flex: 0 0 auto; padding: 0 18px; background: var(--gold); color: var(--navy); }
   #diagLog { max-height: 34dvh; overflow: auto; margin: 8px 0; padding: 8px; border-radius: 8px; background: var(--bg);
     color: #C7CEDA; font: 10.5px/1.4 ui-monospace, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
 </style>
@@ -406,9 +432,9 @@
     ROSTER_REFRESH_INTERVAL_MS: 5 * 60 * 1000, // 5 min — roster changes rarely mid-event
     AUTO_DISMISS_MS: 2500,      // regular check-in card
     AUTO_DISMISS_VIP_MS: 5000,  // VIP card stays longer so the usher can read it
-    TIER_COLORS: {
-      'VIP Pass': '#B8860B',
-      'Regular Attendee': '#1A56DB'
+    TIER_COLORS: { // design system (2026-10-01): gold = VIP Pass, royal blue = Regular Attendee
+      'VIP Pass': '#f1b763',
+      'Regular Attendee': '#2a3fb0'
     },
     DEVICE_ID_KEY: 'cco_device_id',
     OFFLINE_QUEUE_KEY: 'cco_offline_scans',
@@ -744,6 +770,19 @@
     const cache = readRosterCache();
     return (cache && cache.byCode && cache.byCode[code]) || null;
   }
+  // Day-of integrity (2026-10-01): once THIS phone has checked someone in (confirmed, or queued offline), mark them in
+  // the cached roster at once. Otherwise a second scan of the same pass during an outage would show a clean
+  // "OFFLINE — QUEUED" card (and hand over a second token) until the next roster refresh.
+  function markCachedCheckedIn(code) {
+    try {
+      const cache = readRosterCache();
+      const a = cache && cache.byCode && cache.byCode[code];
+      if (!a || a.checkin_status === 'Checked-In') return;
+      a.checkin_status = 'Checked-In';
+      a._seenHere = true; // for the card wording: THIS phone checked them in, not the last roster sync
+      localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify(cache));
+    } catch (e) { /* storage full or blocked: the server still has the final say */ }
+  }
   function updateRosterBadge() {
     const cache = readRosterCache();
     const el = $('rosterBadge');
@@ -769,6 +808,8 @@
       r.json.attendees.forEach(function (a) {
         if (a.attendance_code) byCode[String(a.attendance_code)] = a;
       });
+      // Scans still waiting in this phone's queue aren't on the server yet — keep them marked as checked in.
+      readQueue().forEach(function (it) { const a = byCode[String(it.attendance_code)]; if (a) a.checkin_status = 'Checked-In'; });
       localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify({ byCode: byCode, syncedAt: new Date().toISOString() }));
       updateRosterBadge();
       return 'ok';
@@ -916,11 +957,43 @@
   }
   $('resultModal').addEventListener('click', function (e) { if (e.target === this) closeModal(); });
 
+  // ---- Honours (2026-10-01): tokens (Lei Garland) and special tables, from Code.gs `token` / `special_table` ----
+  // (roster and check-in answers both carry them, so the offline card shows them too). No emoji on the card —
+  // design system — so the marks are small inline SVGs.
+  const MARK_STAR = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#f1b763" d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>';
+  const MARK_WARN = '<svg class="mark" viewBox="0 0 24 24" aria-hidden="true"><path fill="#D97706" d="M12 2.8L1.6 21h20.8z"/><path fill="#1A1200" d="M11 9h2v6h-2zm0 7.6h2v2h-2z"/></svg>';
+  function tokenOf(d) {
+    const t = String((d && d.token) || '').trim();
+    return /^(none|no|n\/?a|-+|—|–|0)$/i.test(t) ? '' : t;
+  }
+  function isHonor(d) { return !!(d && (d.ticket_type === 'VIP Pass' || d.special_table === true || tokenOf(d))); }
+  function tokenClass(t) { return /blue/i.test(t) ? 't-bluegold' : /gold/i.test(t) ? 't-gold' : /ribbon/i.test(t) ? 't-ribbon' : ''; }
+  // mode: 'give' (fresh check-in: hand it over) | 'given' (duplicate: they should already have it — don't give twice)
+  function honorsHtml(d, mode) {
+    const tok = tokenOf(d);
+    const seat = seatOf(d && d.table_allocation);
+    let h = '';
+    if (tok) {
+      h += mode === 'given'
+        ? '<div class="token given"><small>Token already due at first check-in — do not give twice</small><b>' + escapeHtml_(tok) + '</b></div>'
+        : '<div class="token ' + tokenClass(tok) + '"><small>Hand over token</small><b>' + escapeHtml_(tok) + '</b></div>';
+    }
+    if (d && d.special_table === true && mode !== 'given') h += '<div class="special">Special table — escort to ' + escapeHtml_(seat || 'their table') + '</div>';
+    return h ? '<div class="honors">' + h + '</div>' : '';
+  }
+  function tierLabel(d) {
+    const tier = d.ticket_type || 'Regular Attendee';
+    const type = String(d.attendee_type || '').trim();
+    return type && type.toLowerCase() !== tier.toLowerCase() ? tier + ' · ' + type : tier;
+  }
+
   function showResultModal(status, data, message) {
     const modal = $('resultModal');
     let html;
     let autoMs = 0;
     const isVip = data && data.ticket_type === 'VIP Pass';
+    const honor = isHonor(data);
+    const hasToken = !!tokenOf(data);
     const passCode = data && (data._code || data.attendance_code);
     const codeLine = passCode ? '<p class="passcode">PASS ' + escapeHtml_(passCode) + '</p>' : '';
     const bar = function (ms) { return '<div class="dismiss-bar" style="animation-duration:' + ms + 'ms"></div>'; };
@@ -928,18 +1001,20 @@
     if (status === 'SUCCESS') {
       const tier = data.ticket_type || 'Regular Attendee';
       const color = CONFIG.TIER_COLORS[tier] || CONFIG.TIER_COLORS['Regular Attendee'];
-      if (settings.autoDismiss) autoMs = isVip ? CONFIG.AUTO_DISMISS_VIP_MS : CONFIG.AUTO_DISMISS_MS;
+      // A token card never closes by itself: the usher taps once the token is actually in the guest's hands.
+      if (settings.autoDismiss && !hasToken) autoMs = honor ? CONFIG.AUTO_DISMISS_VIP_MS : CONFIG.AUTO_DISMISS_MS;
       html =
-        '<div class="card' + (isVip ? ' vip' : '') + '"><div class="tier-bar" style="background:' + color + '">' + escapeHtml_(tier) + '</div>' +
+        '<div class="card' + (isVip ? ' vip' : '') + (honor ? ' honor' : '') + '"><div class="tier-bar' + (isVip ? ' on-gold' : '') + '" style="background:' + color + '">' + escapeHtml_(tierLabel(data)) + '</div>' +
         (autoMs ? bar(autoMs) : '') +
         '<div class="body">' +
-        (isVip ? '<div class="vip-star">⭐</div>' : '') +
-        '<p class="msg" style="color:' + color + '">CHECKED IN</p>' +
+        (isVip ? MARK_STAR : '') +
+        '<p class="msg" style="color:' + (isVip ? 'var(--gold)' : '#4ADE80') + '">CHECKED IN</p>' +
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
         (seatOf(data.table_allocation) ? '<span class="seat">Table/Seat: ' + escapeHtml_(seatOf(data.table_allocation)) + '</span>' : '') +
-        '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
+        honorsHtml(data, 'give') +
+        '</div><button class="close" onclick="cco_closeModal()">' + (hasToken ? 'Token handed over — next scan' : 'Next scan') + '</button></div>';
     } else if (status === 'DUPLICATE') {
       // Deliberately distinct from SUCCESS regardless of tier color — an amber bar, warning
       // icon, and a one-shot pulse ring, so a duplicate reads unmistakably differently from a
@@ -947,13 +1022,14 @@
       html =
         '<div class="card duplicate"><div class="tier-bar duplicate-bar">DUPLICATE SCAN</div>' +
         '<div class="body">' +
-        '<div class="warn-icon">⚠️</div>' +
+        MARK_WARN +
         '<p class="msg" style="color:var(--amber)">ALREADY CHECKED IN</p>' +
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
         (seatOf(data.table_allocation) ? '<span class="seat">Table/Seat: ' + escapeHtml_(seatOf(data.table_allocation)) + '</span>' : '') +
         (data.initial_checkin_timestamp ? '<div><span class="first-seen">First checked in at ' + escapeHtml_(fmtTime(data.initial_checkin_timestamp)) + '</span></div>' : '') +
+        honorsHtml(data, 'given') +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else if (status === 'QUEUED_OFFLINE') {
       // Roster-cache hit while offline (Story 3.4 mitigation): still shows the tier-colored
@@ -962,25 +1038,28 @@
       const tier = data.ticket_type || 'Regular Attendee';
       const color = CONFIG.TIER_COLORS[tier] || CONFIG.TIER_COLORS['Regular Attendee'];
       const suspectDup = data.checkin_status === 'Checked-In';
-      if (settings.autoDismiss && !suspectDup) autoMs = isVip ? CONFIG.AUTO_DISMISS_VIP_MS : CONFIG.AUTO_DISMISS_MS;
+      if (settings.autoDismiss && !suspectDup && !hasToken) autoMs = honor ? CONFIG.AUTO_DISMISS_VIP_MS : CONFIG.AUTO_DISMISS_MS;
       html =
-        '<div class="card' + (suspectDup ? ' duplicate' : (isVip ? ' vip' : '')) + '"><div class="tier-bar' + (suspectDup ? ' duplicate-bar' : '') + '" style="' + (suspectDup ? '' : 'background:' + color) + '">' + escapeHtml_(tier) + '</div>' +
+        '<div class="card' + (suspectDup ? ' duplicate' : (isVip ? ' vip' : '') + (honor ? ' honor' : '')) + '"><div class="tier-bar' + (suspectDup ? ' duplicate-bar' : (isVip ? ' on-gold' : '')) + '" style="' + (suspectDup ? '' : 'background:' + color) + '">' + escapeHtml_(tierLabel(data)) + '</div>' +
         (autoMs ? bar(autoMs) : '') +
         '<div class="body">' +
-        (isVip && !suspectDup ? '<div class="vip-star">⭐</div>' : '') +
-        '<p class="msg" style="color:' + (suspectDup ? 'var(--amber)' : color) + '">' + (suspectDup ? (data._reason === 'server' ? 'NOT CONFIRMED — ROSTER SAYS CHECKED IN' : 'MAY ALREADY BE CHECKED IN') : 'OFFLINE — QUEUED') + '</p>' +
+        (suspectDup ? MARK_WARN : (isVip ? MARK_STAR : '')) +
+        '<p class="msg" style="color:' + (suspectDup ? 'var(--amber)' : (isVip ? 'var(--gold)' : '#4ADE80')) + '">' + (suspectDup ? (data._reason === 'server' ? 'NOT CONFIRMED — ROSTER SAYS CHECKED IN' : 'MAY ALREADY BE CHECKED IN') : 'OFFLINE — QUEUED') + '</p>' +
         '<p class="name">' + escapeHtml_(data.full_name || '') + '</p>' +
         codeLine +
         '<p class="sub">' + escapeHtml_(data.designation || '') + (data.club_name ? ' · ' + escapeHtml_(data.club_name) : '') + '</p>' +
         (seatOf(data.table_allocation) ? '<span class="seat">Table/Seat: ' + escapeHtml_(seatOf(data.table_allocation)) + '</span>' : '') +
+        honorsHtml(data, suspectDup ? 'given' : 'give') +
         '<span class="offline-note">' + (suspectDup
           ? (data._reason === 'server'
             ? 'The server didn’t confirm this scan (it’s saved and will sync). The roster on this phone says this pass was already checked in, but that copy may be out of date — tap ⚙️ → Refresh roster, or check the printed roster.'
-            : 'Per the last roster sync this code was already checked in — verify with the printed roster before letting them through again.')
+            : (data._seenHere
+              ? 'This phone already checked this pass in earlier (it syncs when the connection is back) — verify it is the same guest before letting them through again.'
+              : 'Per the last roster sync this code was already checked in — verify with the printed roster before letting them through again.'))
           : (data._reason === 'server'
             ? 'The server didn’t confirm this check-in. It’s saved on this device and will sync automatically — identity is from the last cached roster sync.'
             : 'No connection — identity is from the last cached roster sync. Check-in will be recorded once back online.')) + '</span>' +
-        '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
+        '</div><button class="close" onclick="cco_closeModal()">' + (hasToken && !suspectDup ? 'Token handed over — next scan' : 'Next scan') + '</button></div>';
     } else if (status === 'QUEUED') {
       html =
         '<div class="card"><div class="body">' +
@@ -991,7 +1070,7 @@
     } else if (status === 'KEY') {
       html =
         '<div class="card error"><div class="body">' +
-        '<p class="msg" style="color:#DC2626;">ACCESS KEY PROBLEM</p>' +
+        '<p class="msg" style="color:#F87171;">ACCESS KEY PROBLEM</p>' +
         (data.full_name ? '<p class="name">' + escapeHtml_(data.full_name) + '</p>' : '') +
         codeLine +
         '<p class="sub">This check-in is NOT RECORDED yet. It is saved on this phone and will be recorded as soon as the key is fixed: ⚙️ Settings → Access key.</p>' +
@@ -999,7 +1078,7 @@
     } else {
       html =
         '<div class="card error"><div class="body">' +
-        '<p class="msg" style="color:#DC2626;">' + (status === 'NOT_FOUND' ? 'CODE NOT FOUND' : 'ERROR') + '</p>' +
+        '<p class="msg" style="color:#F87171;">' + (status === 'NOT_FOUND' ? 'CODE NOT FOUND' : 'ERROR') + '</p>' +
         codeLine +
         '<p class="sub">' + escapeHtml_(message || 'Check the code, or use the printed roster.') + '</p>' +
         '</div><button class="close" onclick="cco_closeModal()">Try again</button></div>';
@@ -1105,12 +1184,13 @@
       // Roster cache hit: identify the attendee (tier/name/table) even offline (mitigation
       // for the "can't spot a VIP with no connection" gap).
       const suspectDup = cached.checkin_status === 'Checked-In';
-      const vip = cached.ticket_type === 'VIP Pass';
+      const vip = isHonor(cached); // VIP, special table or token: gold flash + VIP chime
       flashScreen(suspectDup ? 'amber' : (vip ? 'gold' : 'green'));
       reactReticle(suspectDup ? 'dup' : (vip ? 'vip' : 'ok'));
       feedback(suspectDup ? 'duplicate' : (vip ? 'vip' : 'success'));
       if (!suspectDup) countScan();
       showResultModal('QUEUED_OFFLINE', Object.assign({}, cached, { _reason: reason, _code: code }), null);
+      markCachedCheckedIn(code);
     } else {
       flashScreen('amber');
       reactReticle('dup');
@@ -1133,17 +1213,19 @@
 
   function renderCheckinResult(json, code) {
     if (json.status === 'SUCCESS') {
-      const vip = json.data && json.data.ticket_type === 'VIP Pass';
+      const vip = isHonor(json.data); // VIP, special table or token: gold flash + VIP chime
       flashScreen(vip ? 'gold' : 'green');
       reactReticle(vip ? 'vip' : 'ok');
       feedback(vip ? 'vip' : 'success');
       countScan();
       showResultModal('SUCCESS', Object.assign({}, json.data, { _code: code }), json.message);
+      markCachedCheckedIn(code);
     } else if (json.status === 'DUPLICATE') {
       flashScreen('amber');
       reactReticle('dup');
       feedback('duplicate');
       showResultModal('DUPLICATE', Object.assign({}, json.data, { _code: code }), json.message);
+      markCachedCheckedIn(code);
     } else {
       flashScreen('red');
       reactReticle('err');
@@ -1216,6 +1298,8 @@
   function tagsFor(a) {
     const t = [];
     if (a.ticket_type === 'VIP Pass') t.push(nEl('span', 'tag vip', '⭐ VIP'));
+    if (tokenOf(a)) t.push(nEl('span', 'tag tok', tokenOf(a)));
+    if (a.special_table === true) t.push(nEl('span', 'tag sp', 'Special table'));
     if (a.checkin_status === 'Checked-In') t.push(nEl('span', 'tag in', '✓ checked in'));
     return t;
   }

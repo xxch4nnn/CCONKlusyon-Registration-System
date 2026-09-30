@@ -29,12 +29,18 @@ instead of generating it at send-time. Code targets the real sheet.
 | Q | `attendee_type` | **Added 2026-10-01** by `importFinalSeating` (RosterImport.gs) from Final Seating "Category": one of Alumni, Club Participant, Event Staff, External Partner, Former Adviser, Guest, Plus One, Student Leaders, USeP Office, USeP Personnel, VVIP, VIP. Shown on the pass chip; VVIP/VIP get the gold chip. `ticket_type` (F) is derived from it (VVIP/VIP → `VIP Pass`). |
 | R | `reg_no` | **Added 2026-10-01.** Final Seating "No." — the key a re-import matches on, so updates never create duplicates or new codes. Blank = the row did not come from Final Seating (e.g. old test rows). |
 
-Columns P–R are found by **header name**, never by position, so their order doesn't matter. A `full_name` of `(TBA)` means an unnamed slot: the pass says "One (1) representative of {club_name} — Please send 1 representative only." 
+| S | `token` | **Added 2026-10-01** by `assignTokens` (RosterImport.gs): `Gold Lei` \| `Blue & Gold Lei` \| `Ribbon` \| blank. Rules read designation / club / attendee_type (never names): Gold = VPAD, OSAS Director, CARESYSTEM, Federation of USeP Alumni, USeP Obrero Alumni; Blue & Gold = former CCO advisers; Ribbon = partners/beneficiaries and club/org advisers. Only blank cells are filled, so a hand-typed value wins; `none` / `-` = deliberately no token. `Code.gs` sends it with check-ins and the roster → scanner card + Telegram alert. |
 
-Tier colors (spec-locked): Gold `#B8860B` = VIP Pass, Royal Blue `#1A56DB` = Regular Attendee. The
-invitation email (`EmailBlaster.gs`) now uses the CCOnklusyon 2026 identity (royal blue/gold,
-Cinzel + Cormorant Garamond) for its overall look — see the 2026-09-28 `CHANGES.md` entry. The
-spec-locked pair above still governs `scanner.html` and `display.html`, which are unchanged.
+Columns P–S are found by **header name**, never by position, so their order doesn't matter. A `full_name` of `(TBA)` means an unnamed slot: the pass says "One (1) representative of {club_name} — Please send 1 representative only." 
+
+Tier colors: gold = VIP Pass, royal blue = Regular Attendee. The invitation email (`EmailBlaster.gs`, since
+2026-09-28) and — since 2026-10-01 — `scanner.html` and `display.html` use the CCOnklusyon 2026 design system
+(ground `#040e3f`/`#060d53`, gold `#fcdf93`/`#f1b763`/`#c98d45`, ink `#f5ffff`, Cinzel + Cormorant Garamond),
+replacing the original `#B8860B` / `#1A56DB` pair. `roster-print.html` stays monochrome for paper.
+
+**Special tables** (not a column): a row whose `table_allocation` is in the Script property `SPECIAL_TABLES`
+(default VVIP, VIP, SL's, Alumni 1, Alumni 2, 41st CCO Officers, Externals — matched ignoring case, spaces and
+apostrophes) triggers the Telegram alert and an "escort" note on the scanner card, whatever its ticket type.
 
 See [`AGENTS.md`](../AGENTS.md) for the rules that govern this file and
 [`CHANGES.md`](../CHANGES.md) for why the schema differs from the spec.

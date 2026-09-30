@@ -51,6 +51,7 @@
   .name { font-weight: 700; }
   .ticket { width: 64px; font-size: 11px; }
   tr.vip .ticket { font-weight: 800; }
+  .ticket .token { margin-top: 2px; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
   .seat { width: 110px; }
   .pin { width: 74px; font: 800 15px/1 Consolas, 'Courier New', monospace; letter-spacing: .12em; text-align: right; }
   .foot { margin-top: 14px; font-size: 11px; color: var(--muted); }
@@ -176,7 +177,8 @@
       .map(function (a) {
         return {
           name: text(a.full_name), club: text(a.club_name), designation: text(a.designation),
-          vip: text(a.ticket_type) === VIP, seat: seatText(a.table_allocation), pin: text(a.attendance_code)
+          vip: text(a.ticket_type) === VIP, seat: seatText(a.table_allocation), pin: text(a.attendance_code),
+          token: /^(none|no|n\/?a|-+|—|–|0)?$/i.test(text(a.token)) ? '' : text(a.token) // Lei Garland (2026-10-01)
         };
       });
 
@@ -211,7 +213,9 @@
       who.appendChild(el('div', 'name', p.name));
       if (p.designation) who.appendChild(el('div', 'role', p.designation));
       tr.appendChild(who);
-      tr.appendChild(el('td', 'ticket', p.vip ? '★ VIP' : 'Regular'));
+      const ticket = el('td', 'ticket', p.vip ? '★ VIP' : 'Regular');
+      if (p.token) ticket.appendChild(el('div', 'token', 'Token: ' + p.token)); // so the paper failsafe still says what to hand over
+      tr.appendChild(ticket);
       tr.appendChild(el('td', 'seat', p.seat));
       tr.appendChild(el('td', 'pin', p.pin));
       body.appendChild(tr);

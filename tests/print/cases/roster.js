@@ -114,6 +114,13 @@
     check('P13 toolbar hidden in print', /\.no-print|#toolbar/.test(printCss) && /display:\s*none/.test(printCss));
   });
 
+  test('P15 the Lei Garland token is printed under the ticket ("none" prints nothing)', async () => {
+    h.setRows([row(10001, 'Dr Vip', 'CCO', { ticket_type: 'VIP Pass', token: 'Gold Lei' }), row(10002, 'Club Adviser', 'CCO', { token: 'Ribbon' }), row(10003, 'No Token', 'CCO', { token: 'none' })]);
+    await h.load();
+    const t = Array.from(document.querySelectorAll('tr.person .ticket')).map((c) => c.textContent.replace(/\s+/g, ' ').trim());
+    check('P15 token lines', /VIP.*Token: Gold Lei/.test(t.join('|')) && /Regular.*Token: Ribbon/.test(t.join('|')) && t.filter((x) => /Token/.test(x)).length === 2, t.join('|'));
+  });
+
   test('P14 it asks the server for the roster exactly once per load', async () => {
     h.setRows([row(10001, 'Ana Reyes', 'CESA')]);
     const before = h.calls().length;

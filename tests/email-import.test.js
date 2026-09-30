@@ -204,5 +204,44 @@ const w11c = world(P11.filter(p => p.email !== 'N/A'), [], { stampFail: true });
 w11c.run('sendEventPassesLIVE()');
 ok('cannot record pass_sent: stops after the first email instead of sending unrecorded passes', w11c.sent.length === 1 && w11c.logs.some(l => /^STOP: sent to P0 <a@x\.test> but could NOT write pass_sent \(Protected cell\)/.test(l)));
 
+// ---------- 12. Lei Garland tokens (assignTokens) ----------
+const TH = MA_HEADERS.concat(['attendee_type', 'reg_no']);
+const tr = (name, club, desig, table, type, extra = {}) => TH.map(h => ({ full_name: name, club_name: club, designation: desig, table_allocation: table, attendee_type: type, ticket_type: /VIP/.test(type) ? 'VIP Pass' : 'Regular Attendee', attendance_code: '3' + String(Math.random()).slice(2, 6), ...extra }[h] ?? ''));
+const tokenRows = () => [TH.slice(),
+  tr('A Vpad', 'USeP Top Management', 'VPAD', 'VVIP', 'VVIP'),
+  tr('B Osas', 'USeP Top Management', 'OSAS Director', 'VVIP', 'VVIP'),
+  tr('(TBA)', 'CARESYSTEM', 'Representative', 'VVIP', 'VVIP'),
+  tr('C Fed', 'USeP Top Management', 'Federation of USeP Alumni Association President', 'VVIP', 'VVIP'),
+  tr('D Obr', 'USeP Top Management', 'USeP Obrero Alumni Association President', 'VVIP', 'VVIP'),
+  tr('E Adv', 'CCO Adviser', 'Former CCO Adviser', 'VIP', 'VIP'),
+  tr('F Part', 'SOME GRAPHICS', 'Partner', 'VIP', 'VIP'),
+  tr('(TBA)', 'SOME SHELTER', 'Partner', 'VIP', 'External Partner'),
+  tr('G OrgAdv', 'Some Society', 'Organization Adviser (added)', 'Table 3', 'Club Participant'),
+  tr('H ClubAdv', 'Some Club', 'Club Adviser', 'Table 9', 'Club Participant'),
+  tr('I Pres', 'Some Club', 'President', 'Table 9', 'Club Participant'),
+  tr('J Other', 'USeP Top Management', 'Some Commission Official', 'VVIP', 'VVIP'),
+  tr('K Usg', "SL's", 'USG Adviser', "SL's", 'Student Leaders'),
+  tr('L Hand', 'Some Club', 'President', 'Table 1', 'Club Participant', { reg_no: '9' }),
+  tr('M None', 'Guests', 'Guest', 'VVIP', 'Guest')
+];
+const w12 = world([], []);
+w12.ma.values = tokenRows();
+w12.ma.values[14].push('Ribbon');          // hand-typed token on "L Hand" (column after reg_no = the token header to be added)
+w12.ma.values[15].push('none');            // deliberately no token
+w12.run('assignTokensPreview()');
+ok('tokens preview: writes nothing', !w12.ma.values[0].includes('token') && w12.logs.some(l => /^TOKEN PREVIEW — nothing written\. Totals: Gold Lei 5, Blue & Gold Lei 1, Ribbon 5/.test(l)), w12.logs.find(l => /TOKEN PREVIEW/.test(l)));
+w12.run('assignTokens()');
+const tk = Object.fromEntries(w12.rowsAsObjects().map(r => [r.full_name + '|' + r.club_name, r.token]));
+ok('tokens: Gold Lei for VPAD, OSAS Director, CARESYSTEM, USeP Federation, Obrero Alumni', ['A Vpad|USeP Top Management', 'B Osas|USeP Top Management', '(TBA)|CARESYSTEM', 'C Fed|USeP Top Management', 'D Obr|USeP Top Management'].every(k => tk[k] === 'Gold Lei'), JSON.stringify(tk));
+ok('tokens: Blue & Gold Lei for former CCO advisers', tk['E Adv|CCO Adviser'] === 'Blue & Gold Lei');
+ok('tokens: Ribbon for partners/beneficiaries and club/org advisers', ['F Part|SOME GRAPHICS', '(TBA)|SOME SHELTER', 'G OrgAdv|Some Society', 'H ClubAdv|Some Club'].every(k => tk[k] === 'Ribbon'));
+ok('tokens: nobody else gets one', tk['I Pres|Some Club'] === '' && tk['J Other|USeP Top Management'] === '' && tk["K Usg|SL's"] === '');
+ok('tokens: hand-typed values ("Ribbon", "none") are kept', tk['L Hand|Some Club'] === 'Ribbon' && tk['M None|Guests'] === 'none');
+ok('tokens: only the token column is written (header added once)', w12.ma.values[0].filter(h => h === 'token').length === 1 && w12.ma.values[1][TH.indexOf('designation')] === 'VPAD');
+ok('tokens: "possibly missed" lists the VVIP without a token and the other adviser, not the "none" row', w12.logs.some(l => /\? .*J Other.*VVIP, no token/.test(l)) && w12.logs.some(l => /\? .*K Usg.*an adviser, no token/.test(l)) && !w12.logs.some(l => /\? .*M None/.test(l)));
+const before12 = JSON.stringify(w12.ma.values); w12.logs.length = 0;
+w12.run('assignTokens()');
+ok('tokens: re-running changes nothing', JSON.stringify(w12.ma.values) === before12);
+
 console.log(fail ? '\nSOME FAILED' : '\nALL PASS');
 process.exitCode = fail ? 1 : 0;
