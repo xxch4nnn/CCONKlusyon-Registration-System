@@ -5,6 +5,16 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-09-30 — Dispatch tracking hardened (`pass_sent` / `pass_sent_timestamp`)
+**By:** user ("some fields were not updated when the emails were sent" — the columns exist to show who got a pass and when) + Claude
+**Finding:** every pass email in the sender's Gmail is a Sept 28 **`[TEST]`** send; test mode never writes these columns by design (a test pass goes to a test inbox, not that attendee — stamping it would be false and would make the real run skip that person). So nothing was broken for those sends, but the real-send path had three ways to lose the record:
+1. Headers were matched exactly, so a stray space (`pass_sent `) meant no stamps **and** no "already sent" skip (a re-run would double-send). Headers are now trimmed when read.
+2. Missing headers only logged a warning and kept sending. A real send now **refuses to start** ("Nothing was sent: …") unless both headers exist.
+3. Sheet writes were buffered until the run ended; a run cut off by Apps Script's ~6-minute limit (100 emails ≈ 5 min) could lose stamps for emails already sent. Each stamp is now flushed immediately, and the loop stops cleanly after 5 minutes (`maxRunMs`) with "Run again to continue".
+**Verified:** mocked runs — stamps N/O for each real send, flush per stamp, stray-space header tracked and still skips, missing header → nothing sent, test mode writes nothing, time guard stops and logs.
+
+---
+
 ## 2026-09-30 — Updated Event Primer link; beta-test addresses moved to a Script property
 **By:** user (new primer file; four test addresses) + Claude
 **What:** `INFO_LINKS` Event Primer now points at Drive file `1tJN_6Ic2Q5VSVY9aUbjeWHwx90qHZNlE` (HTML list and plain text both follow). `sendEventPassesBetaTest` / `…Full` read their addresses from the Script property **`BETA_TEST_EMAILS`** (comma-separated) via `betaTestEmails_()` instead of an array in the file — the repo is public (no real emails committed), and a property survives re-pasting the file from GitHub. No property → logs how to add it and sends nothing.

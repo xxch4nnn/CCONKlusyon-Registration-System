@@ -24,11 +24,13 @@
  * Dispatch tracking (added 2026-09-28): Master_Attendance needs two new header cells added
  * MANUALLY, right after column M (`checked_in_by`) — this script never writes schema, only data:
  *   N  pass_sent            blank or TRUE
- *   O  pass_sent_timestamp  blank or an ISO 8601 timestamp
+ *   O  pass_sent_timestamp  blank or the send time, GMT+8 (e.g. 2026-09-30T19:05:12+08:00)
  * See docs/db-schema.md and CHANGES.md (2026-09-28) for why. `sendEventPasses` skips any row
- * where `pass_sent` is already TRUE and stamps both columns after a successful PRODUCTION send
- * only — test-mode sends (sendEventPassesBetaTest/Full) never read or write these columns, so
- * beta-checking the template never blocks or fakes a real dispatch.
+ * where `pass_sent` is already TRUE and stamps both columns right after each successful REAL send
+ * (flushed to the sheet immediately). A real send refuses to start if either header is missing.
+ * Test-mode sends (sendEventPassesBetaTest/Full) never read or write these columns: a test pass
+ * goes to a test inbox, not to that attendee, so marking the row "sent" would be false AND would
+ * make the real run skip that person. Test sends are listed in the run's Execution log instead.
  */
 
 const SENDER_NAME = 'CCO CCOnklusyon 2026';
@@ -76,7 +78,8 @@ function renderTemplate_(template, fieldMap) {
 /** Opens Master_Attendance once and returns {sheet, headers} — shared by reads and writes. */
 function openBlastSheet_() {
   const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_NAME);
-  const headers = sheet.getDataRange().getValues()[0];
+  // Trimmed, so a stray space in a header cell ("pass_sent ") can't silently break tracking.
+  const headers = sheet.getDataRange().getValues()[0].map(function (h) { return String(h).trim(); });
   return { sheet: sheet, headers: headers };
 }
 
@@ -97,23 +100,21 @@ function rowsAsObjects_() {
 }
 
 /**
- * Writes TRUE + an ISO timestamp into the row's dispatch-tracking columns, found by HEADER NAME
+ * Writes TRUE + a GMT+8 timestamp into the row's dispatch-tracking columns, found by HEADER NAME
  * (not a hardcoded column letter), so this keeps working even if the sheet's columns get
- * reordered. Logs a warning and does nothing if the headers aren't there yet.
+ * reordered. sendMailBlast_ checks both headers exist BEFORE sending anything in production.
+ * Flushed immediately: Apps Script otherwise holds sheet writes until the run ends, and a run
+ * cut off by the ~6-minute limit would lose the record of emails that did go out.
  */
 function markDispatched_(headers, sheet, rowIndex, fieldName, tsFieldName) {
   const fCol = headers.indexOf(fieldName);
   const tCol = headers.indexOf(tsFieldName);
-  if (fCol === -1) {
-    Logger.log('WARNING: column "' + fieldName + '" not found in Master_Attendance — dispatch not recorded. ' +
-      'Add the header cell described at the top of EmailBlaster.gs, then re-run.');
-    return;
-  }
   sheet.getRange(rowIndex, fCol + 1).setValue(true);
   if (tCol !== -1) {
-    const iso = Utilities.formatDate(new Date(), 'GMT+8', "yyyy-MM-dd'T'HH:mm:ssXXX");
-    sheet.getRange(rowIndex, tCol + 1).setValue(iso);
+    const stamp = Utilities.formatDate(new Date(), 'GMT+8', "yyyy-MM-dd'T'HH:mm:ssXXX");
+    sheet.getRange(rowIndex, tCol + 1).setValue(stamp);
   }
+  SpreadsheetApp.flush();
 }
 
 /**
@@ -147,6 +148,7 @@ function escapeHtml_(s) {
  *                     (first N rows where N = testEmailOverrides.length) instead of every row
  *                     round-robined across the test addresses. Default true.
  *   throttleMs       ms to sleep between sends (default 2000 = 1 send / 2s)
+ *   maxRunMs         stop sending after this long (default 5 min, under Apps Script's ~6 min cap)
  *   dispatchField    (optional) header name used for duplicate-send protection, e.g. 'pass_sent'.
  *                    Ignored in test mode. In production: a row whose dispatchField is already
  *                    truthy is skipped (unless forceResend); a successful send writes TRUE
@@ -164,6 +166,22 @@ function sendMailBlast_(rows, opts) {
 
   const trackDispatch = !opts.testMode && !!opts.dispatchField;
   const sheetCtx = trackDispatch ? openBlastSheet_() : null; // one open, reused for every write
+  if (trackDispatch) {
+    // Fail BEFORE the first email, not after: a real send that can't record itself would leave
+    // no trace of who got a pass, and a re-run would email everyone again.
+    const missingCols = [opts.dispatchField, opts.dispatchTsField].filter(function (h) {
+      return h && sheetCtx.headers.indexOf(h) === -1;
+    });
+    if (missingCols.length) {
+      throw new Error('Nothing was sent: Master_Attendance has no "' + missingCols.join('" / "') +
+        '" header. Add it in row 1 (see the top of EmailBlaster.gs), then run again.');
+    }
+  }
+  // Stop cleanly before Apps Script's ~6-minute execution limit; a re-run skips rows already
+  // marked sent, so it simply continues where this run stopped.
+  const maxRunMs = opts.maxRunMs || 5 * 60 * 1000;
+  const startedAt = Date.now();
+  let stopped = false;
 
   let targetRows = rows;
   if (opts.testMode && opts.sampleOnly !== false) {
@@ -194,8 +212,15 @@ function sendMailBlast_(rows, opts) {
       alreadyDispatched++;
       return;
     }
+    if (stopped) return;
     if (sent >= quotaRemaining) {
-      Logger.log('STOP: daily quota reached at ' + sent + ' sends.');
+      Logger.log('STOP: daily quota reached at ' + sent + ' sends. Run again after the quota resets.');
+      stopped = true;
+      return;
+    }
+    if (Date.now() - startedAt > maxRunMs) {
+      Logger.log('STOP: time limit near after ' + sent + ' sends. Run again to continue — rows already marked sent are skipped.');
+      stopped = true;
       return;
     }
 
