@@ -66,7 +66,7 @@ const before = JSON.stringify(w.ma.values);
 w.run('importFinalSeatingPreview()');
 ok('preview: nothing written', JSON.stringify(w.ma.values) === before);
 ok('preview: reports 6 to add, 2 skipped', w.logs.some(l => /PREVIEW.*Added 6/.test(l)) && w.logs.some(l => /Skipped 2/.test(l)), w.logs[0]);
-ok('preview: flags the old test row', w.logs.some(l => /did not come from Final Seating.*DELETE/.test(l)));
+ok('preview: flags the old test row', w.logs.some(l => /did not come from Final Seating.*WILL get a pass.*delete any that are old test rows/.test(l)));
 ok('preview: flags a category outside the 12 types', w.logs.some(l => /not in the 12 attendee types.*Sponsor/.test(l)));
 
 // ---------- 1b. tab found by gid if renamed ----------
@@ -155,6 +155,38 @@ ok('the only visible pass function that emails attendees is sendEventPassesLIVE'
 w7.sent.length = 0;
 w7.run('sendEventPassesLIVE()');
 ok('LIVE: every row to its own email, stamped', w7.sent.length === 7 && PEOPLE.every((p, i) => w7.sent[i].to === p.email && w7.sent[i].htmlBody.includes(p.full_name) && w7.sent[i].htmlBody.includes('>' + p.attendance_code + '<')) && w7.ma.values.slice(1).every(r => r[13] === true));
+
+// ---------- 10. "already sent?" rule: send when pass_sent OR pass_sent_timestamp is empty ----------
+const R = (email, name, code, sentFlag, ts) => ({ email, full_name: name, attendance_code: code, ticket_type: 'Regular Attendee', club_name: 'CCO', pass_sent: sentFlag, pass_sent_timestamp: ts });
+const TS = '2026-10-01T20:00:00+08:00';
+const w10 = world([
+  R('both@x.test', 'Both Filled', '10001', true, TS),          // sent -> skip
+  R('flag@x.test', 'Flag Only', '10002', true, ''),             // timestamp empty -> send
+  R('ts@x.test', 'Timestamp Only', '10003', '', TS),            // pass_sent cleared -> send (re-send)
+  R('unticked@x.test', 'Unticked Box', '10004', false, TS),     // checkbox unticked -> send
+  R('text@x.test', 'Text FALSE', '10005', 'FALSE', TS),         // typed FALSE -> send
+  R('yes@x.test', 'Typed Yes', '10006', 'Yes', TS),             // typed yes + ts -> skip
+  R('new@x.test', 'Added Later', '', '', ''),                   // hand-added row, no code yet -> code generated, send
+  R('', 'No Email Person', '10008', '', '')                     // no email -> skip
+], []);
+w10.run('previewEventPassesLIVE()');
+ok('preview: sends nothing, writes nothing, counts right', w10.sent.length === 0 && w10.logs.some(l => /Next live run would email 5 of 8 row\(s\); 2 already sent; 1 have no email/.test(l)), w10.logs.find(l => /PREVIEW/.test(l)));
+ok('preview: says the hand-added row gets a code first', w10.logs.some(l => /1 of them have no attendance code yet/.test(l)));
+w10.run('sendEventPassesLIVE()');
+const got = w10.sent.map(m => m.to).sort().join(',');
+ok('LIVE: sends exactly the rows with pass_sent or timestamp empty', got === 'flag@x.test,new@x.test,text@x.test,ts@x.test,unticked@x.test', got);
+ok('LIVE: skips rows with both filled (TRUE / typed Yes)', !w10.sent.some(m => /both@|yes@/.test(m.to)));
+const newRow = w10.rowsAsObjects().find(r => r.email === 'new@x.test');
+ok('LIVE: hand-added row got a code before sending, and its pass shows it', /^\d{5}$/.test(String(newRow.attendance_code)) && w10.sent.find(m => m.to === 'new@x.test').htmlBody.includes('>' + newRow.attendance_code + '<'));
+ok('LIVE: every sent row now has both stamps', ['flag@x.test', 'ts@x.test', 'unticked@x.test', 'text@x.test', 'new@x.test'].every(e => { const r = w10.rowsAsObjects().find(x => x.email === e); return r.pass_sent === true && String(r.pass_sent_timestamp).trim() !== ''; }));
+w10.sent.length = 0;
+w10.run('sendEventPassesLIVE()');
+ok('LIVE again: nobody is emailed twice', w10.sent.length === 0);
+// someone added after the first run, and someone re-sent by clearing pass_sent
+w10.ma.values.push(w10.ma.values[0].map(h => ({ email: 'late@x.test', full_name: 'Late Addition' }[h] ?? '')));
+w10.ma.values.forEach((r, i) => { if (i && r[0] === 'both@x.test') r[13] = ''; });
+w10.run('sendEventPassesLIVE()');
+ok('LIVE after edits: only the new person and the cleared row are emailed', w10.sent.map(m => m.to).sort().join(',') === 'both@x.test,late@x.test', w10.sent.map(m => m.to).join(','));
 
 console.log(fail ? '\nSOME FAILED' : '\nALL PASS');
 process.exitCode = fail ? 1 : 0;

@@ -5,6 +5,14 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Live send: "send if pass_sent OR pass_sent_timestamp is empty"; rows added later get their pass
+**By:** user ("send to them if pass_sent or pass_sent_timestamp is empty, otherwise don't; I'll edit Master_Attendance later and want those people to get their emails too") + Claude
+**Before:** the skip checked only `pass_sent` truthiness — the timestamp was ignored, a typed "FALSE" counted as sent, and a hand-added row with no `attendance_code` was skipped ("missing attendance_code").
+**Now (`EmailBlaster.gs`):** one rule, `isAlreadyDispatched_`: sent = `pass_sent` is yes (TRUE/ticked/TRUE-YES-Y-SENT-1-X-✓) **and** `pass_sent_timestamp` is filled. Either empty → the next `sendEventPassesLIVE()` emails that row and stamps both. `sendEventPassesLIVE` first fills codes for rows without one (`generateCredentials`). New **`previewEventPassesLIVE()`**: sends/writes nothing, logs who the next live run would email, who is done, who has no email, and today's quota. `RosterImport.gs` uses the same rule for its "changed after sent" report and now says rows without `reg_no` are kept and will get a pass (not "delete them").
+**Verified:** tests for every combination (both filled → skip; flag only / timestamp only / unticked / typed FALSE → send; typed Yes → skip; hand-added row gets a code then its pass; second run sends nobody; after adding a row and clearing one `pass_sent`, only those two are emailed). Mutation-checked against the old rule (4 failures). Full suite green.
+
+---
+
 ## 2026-10-01 — Test sends went to the wrong person: fixed at the root (match by email)
 **By:** user (a test send to Benjamin Gabutero delivered Nathalie Genobisa's pass; "revisit the codebase") + Claude
 **Cause:** test mode paired rows and test addresses **by position** — row 1 → address 1, row 2 → address 2… Rows 1–3 happened to belong to the first three test addresses; row 4 was Genobisa, address 4 was Gabutero. This is the same class of bug reported on Sept 19 (one inbox receiving several attendees' passes); `sampleOnly` then only reduced it to one pass per inbox, still by position. Consequence beyond confusion: a working attendance code/QR went to another person (Genobisa's code 66519 to Gabutero). It dies when the test rows are deleted and the list is imported with fresh codes.

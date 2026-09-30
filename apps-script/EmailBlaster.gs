@@ -25,9 +25,10 @@
  * MANUALLY, right after column M (`checked_in_by`) — this script never writes schema, only data:
  *   N  pass_sent            blank or TRUE
  *   O  pass_sent_timestamp  blank or the send time, GMT+8 (e.g. 2026-09-30T19:05:12+08:00)
- * See docs/db-schema.md and CHANGES.md (2026-09-28) for why. `sendEventPasses` skips any row
- * where `pass_sent` is already TRUE and stamps both columns right after each successful REAL send
- * (the real send is `sendEventPassesLIVE`)
+ * See docs/db-schema.md and CHANGES.md (2026-09-28) for why. The real send (`sendEventPassesLIVE`)
+ * emails only rows where pass_sent OR pass_sent_timestamp is empty (rule: isAlreadyDispatched_) and
+ * stamps both right after each successful send. Clear someone's pass_sent to re-send them.
+ * `previewEventPassesLIVE` lists who the next live run would email, without sending.
  * (flushed to the sheet immediately). A real send refuses to start if either header is missing.
  * Test sends (sendEventPassesBetaTest / sendEventPassesBetaTestVariety) never read or write these
  * columns. A test address only ever receives its OWN pass, or a clearly marked SAMPLE pass with the
@@ -210,8 +211,8 @@ function sendMailBlast_(rows, opts) {
       skipped++;
       return;
     }
-    if (trackDispatch && !opts.forceResend && row[opts.dispatchField]) {
-      Logger.log('SKIP (already dispatched): ' + row.full_name);
+    if (trackDispatch && !opts.forceResend && isAlreadyDispatched_(row, opts.dispatchField, opts.dispatchTsField)) {
+      Logger.log('SKIP (already sent ' + row[opts.dispatchTsField] + '): ' + row.full_name);
       alreadyDispatched++;
       return;
     }
@@ -267,6 +268,23 @@ function sendMailBlast_(rows, opts) {
 }
 
 function normEmail_(e) { return String(e || '').trim().toLowerCase(); }
+
+/**
+ * THE "ALREADY SENT?" RULE for the live send (one place, used by the send and by the preview):
+ * a row counts as sent only when BOTH `pass_sent` says yes AND `pass_sent_timestamp` is filled.
+ * If EITHER is empty, the next sendEventPassesLIVE() sends to that row and fills both again. So:
+ *   - rows added later (both blank)                         -> get their pass on the next live run
+ *   - to re-send one person (new table, fixed email, lost email) -> clear their pass_sent cell
+ * "Yes" = TRUE / a ticked checkbox, or the text TRUE, YES, Y, SENT, 1, X, ✓. FALSE, an unticked
+ * checkbox or anything else counts as empty.
+ */
+function isAlreadyDispatched_(row, fieldName, tsFieldName) {
+  const flag = row[fieldName];
+  const flagSet = flag === true || /^(true|yes|y|sent|1|x|✓|✔)$/i.test(String(flag == null ? '' : flag).trim());
+  if (!tsFieldName) return flagSet;
+  const ts = row[tsFieldName];
+  return flagSet && String(ts == null ? '' : ts).trim() !== '';
+}
 
 /**
  * Test-mode pairing: for each test address, the rows the REAL send would email to that address
@@ -658,10 +676,51 @@ function buildPassPlainText_(row) {
 /**
  * THE REAL SEND — emails every attendee their own pass and stamps pass_sent / pass_sent_timestamp.
  * Named in capitals on purpose: it is the only function in the Run dropdown that emails attendees.
- * Rows already marked pass_sent are skipped, so running it again only sends to the rest.
+ * Only rows whose pass_sent or pass_sent_timestamp is empty are sent (isAlreadyDispatched_), so it
+ * is safe to run again after adding or editing rows: only those people get an email.
+ * Rows added by hand without an attendance_code get one first (generateCredentials in Code.gs).
  */
 function sendEventPassesLIVE() {
+  fillMissingCodes_();
   sendEventPasses_(false, [], false);
+}
+
+/**
+ * DRY RUN of the live send: writes nothing, sends nothing — logs who the next
+ * sendEventPassesLIVE() would email, who is already done, and who can't get one.
+ */
+function previewEventPassesLIVE() {
+  const rows = rowsAsObjects_();
+  const headers = openBlastSheet_().headers;
+  ['pass_sent', 'pass_sent_timestamp'].forEach(function (h) {
+    if (headers.indexOf(h) === -1) Logger.log('PROBLEM: no "' + h + '" header in Master_Attendance — the live send will refuse to start until it is added.');
+  });
+  const willSend = [], alreadySent = [], noEmail = [];
+  rows.forEach(function (r) {
+    if (isAlreadyDispatched_(r, 'pass_sent', 'pass_sent_timestamp')) alreadySent.push(r);
+    else if (!String(r.email || '').trim()) noEmail.push(r);
+    else willSend.push(r);
+  });
+  const needCode = willSend.filter(function (r) { return !String(r.attendance_code || '').trim(); });
+  const names = function (list) { return list.map(function (r) { return r.full_name + ' <' + (r.email || 'no email') + '>'; }).join('; '); };
+  Logger.log('PREVIEW — nothing sent. Next live run would email ' + willSend.length + ' of ' + rows.length + ' row(s); ' +
+    alreadySent.length + ' already sent; ' + noEmail.length + ' have no email. Quota left today: ' + MailApp.getRemainingDailyQuota() + '.');
+  if (needCode.length) Logger.log(needCode.length + ' of them have no attendance code yet — the live run generates it first.');
+  if (willSend.length) Logger.log('Would email: ' + names(willSend));
+  if (noEmail.length) Logger.log('No email (give them their code another way): ' + names(noEmail));
+}
+
+/** Codes + QR URLs for rows that have a name but no attendance_code (hand-added rows). */
+function fillMissingCodes_() {
+  const missing = rowsAsObjects_().filter(function (r) { return !String(r.attendance_code || '').trim(); }).length;
+  if (!missing) return;
+  if (typeof generateCredentials !== 'function') {
+    Logger.log('WARNING: ' + missing + ' row(s) have no attendance code and generateCredentials (Code.gs) is missing — they will be skipped.');
+    return;
+  }
+  generateCredentials();
+  SpreadsheetApp.flush();
+  Logger.log('Generated attendance codes for ' + missing + ' new row(s).');
 }
 
 /** Shared by the live send and the tests. Underscore = hidden from the Run dropdown. */

@@ -189,7 +189,8 @@ function planRosterImport_(maValues, records) {
     });
     if (changed) {
       report.updated++;
-      const sent = idx.pass_sent !== undefined && grid[at][idx.pass_sent] !== '' && grid[at][idx.pass_sent] !== false;
+      const sent = idx.pass_sent !== undefined && typeof isAlreadyDispatched_ === 'function' &&
+        isAlreadyDispatched_({ pass_sent: grid[at][idx.pass_sent], pass_sent_timestamp: idx.pass_sent_timestamp === undefined ? '' : grid[at][idx.pass_sent_timestamp] }, 'pass_sent', 'pass_sent_timestamp');
       if (sent) report.changedAfterSend.push('No. ' + rec.reg_no + ' (row ' + (at + 1) + ')');
     } else {
       report.unchanged++;
@@ -207,9 +208,9 @@ function logImportReport_(report, dryRun) {
   if (report.skipped.length) L('Skipped ' + report.skipped.length + ': ' + report.skipped.join('; '));
   if (Object.keys(report.unknownTypes).length) L('CHECK: Category not in the 12 attendee types (kept as written): ' + JSON.stringify(report.unknownTypes));
   if (report.duplicateRegNos.length) L('CHECK: duplicate No. in Final Seating (only the first was used): ' + report.duplicateRegNos.join(', '));
-  if (report.changedAfterSend.length) L('CHECK: details changed AFTER their pass was sent (re-send if the table changed): ' + report.changedAfterSend.join(', '));
+  if (report.changedAfterSend.length) L('CHECK: details changed AFTER their pass was sent: ' + report.changedAfterSend.join(', ') + '. To send them the updated pass, clear their pass_sent cell and run sendEventPassesLIVE again.');
   if (report.notInList.length) L('CHECK: in Master_Attendance but no longer in Final Seating (NOT deleted): ' + report.notInList.join(', '));
-  if (report.noRegNoRows.length) L('CHECK: ' + report.noRegNoRows.length + ' Master_Attendance row(s) did not come from Final Seating (old test rows?) — sheet rows ' + report.noRegNoRows.join(', ') + '. DELETE them before the real send, or they will get a pass too.');
+  if (report.noRegNoRows.length) L('CHECK: ' + report.noRegNoRows.length + ' Master_Attendance row(s) did not come from Final Seating (added by hand, or old test rows) — sheet rows ' + report.noRegNoRows.join(', ') + '. They are kept and WILL get a pass on the live send; delete any that are old test rows.');
 }
 
 /** The Final Seating tab: by name, else by gid, in this workbook (or SEATING_SPREADSHEET_ID if set). */
