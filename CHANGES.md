@@ -5,6 +5,14 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-01 — Voided passes (withdrawals) + withdrawal procedure
+**By:** Claude (user: an org withdrew a guest by letter on Sept 21, nobody recorded it, the guest still got a pass and the replacement didn't).
+**Mechanism:** void a pass by putting `VOID-` in front of its code in Master_Attendance (`12345` → `VOID-12345`); keep the row as the record. Code.gs (BACKEND_VERSION `2026-10-01.2`): scanning the old QR answers `NOT_FOUND` with `voided: true` + the name, writes nothing, sends no alert; the roster lists it under a separate `voided` array (wall/print counts unaffected); `generateCredentials` never reissues a voided number. EmailBlaster: live send and preview skip VOID rows. Scanner: red **VOIDED — WITHDRAWN** card ("do not admit, send to the registration desk"), also offline from the cached roster, never queued; voided passes are not in name search. Older scanners still refuse it (CODE NOT FOUND).
+**Procedure:** written notice → acknowledge same day → Final Seating Status `Withdrawn — <date>` → `VOID-` the code (BATCH `WITHDRAWN`) → replacement as a new Final Seating row → import → LIVE send (emails only the new row) → void email to the withdrawn guest, cc the org.
+**Verified:** backend S6, send tests (voided row skipped, number not reused), scanner H9; full suite green.
+
+---
+
 ## 2026-10-01 — Day-of: special tables + Lei Garland tokens on Telegram and the scanner; design system on scanner/wall
 **By:** Claude (user: "the telegram should bump to whomever is seated on the special tables … also be used for the tokens"; apply the design system; review the scanners for day-of integrity).
 **Backend (`Code.gs`, BACKEND_VERSION `2026-10-01.1`):**

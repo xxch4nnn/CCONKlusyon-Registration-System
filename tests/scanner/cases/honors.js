@@ -85,4 +85,18 @@
     check('H8 queued pass stays Checked-In after refresh', cached('48201').checkin_status === 'Checked-In');
     check('H8 other passes follow the server', cached('48202').checkin_status === 'Pending');
   });
+  test('H9 a voided (withdrawn) pass: red VOIDED card online, and offline from the cached roster, never queued', async () => {
+    h.setServer(() => resolve(json({ status: 'NOT_FOUND', voided: true, message: 'This pass was VOIDED (withdrawn).', data: { attendance_code: '48201', full_name: 'Withdrawn Person', club_name: 'CESA' } })));
+    await T.submitCheckin('48201');
+    let t = h.modalText();
+    check('H9 online: VOIDED — WITHDRAWN with the name', /VOIDED — WITHDRAWN/.test(t) && /Withdrawn Person/.test(t) && /Do not admit/.test(t), t.slice(0, 120));
+    T.closeModal();
+    h.setRoster(() => resolve(json({ status: 'SUCCESS', attendees: [P({ attendance_code: '48202', full_name: 'Other Person' })], voided: [{ attendance_code: '48201', full_name: 'Withdrawn Person', club_name: 'CESA' }] })));
+    await T.fetchRoster();
+    h.setServer(null);
+    await T.submitCheckin('48201');
+    t = h.modalText();
+    check('H9 offline: still VOIDED, nothing queued', /VOIDED — WITHDRAWN/.test(t) && T.readQueue().length === 0, t.slice(0, 80) + ' q=' + T.readQueue().length);
+    check('H9 voided pass is not in the name-search list', !cached('48201'));
+  });
 })();

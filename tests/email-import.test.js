@@ -243,5 +243,17 @@ const before12 = JSON.stringify(w12.ma.values); w12.logs.length = 0;
 w12.run('assignTokens()');
 ok('tokens: re-running changes nothing', JSON.stringify(w12.ma.values) === before12);
 
+// ---------- 13. voided pass (withdrawal) ----------
+const w13 = world([
+  { email: 'gone@x.test', full_name: 'Withdrawn Person', attendance_code: 'VOID-30001', ticket_type: 'Regular Attendee', club_name: 'CCO' },
+  { email: 'repl@x.test', full_name: 'Replacement Person', attendance_code: '', ticket_type: 'Regular Attendee', club_name: 'CCO' }
+], []);
+w13.run('previewEventPassesLIVE()');
+ok('void: preview leaves the voided row out', w13.logs.some(l => /would email 1 of/.test(l)), w13.logs.find(l => /PREVIEW/.test(l)));
+w13.run('sendEventPassesLIVE()');
+const r13 = w13.rowsAsObjects();
+ok('void: live send emails only the replacement', w13.sent.map(m => m.to).join() === 'repl@x.test' && w13.logs.some(l => /SKIP \(voided pass/.test(l)), w13.sent.map(m => m.to).join());
+ok('void: the voided number is never reissued, the VOID code is kept', r13[0].attendance_code === 'VOID-30001' && /^\d{5}$/.test(String(r13[1].attendance_code)) && String(r13[1].attendance_code) !== '30001');
+
 console.log(fail ? '\nSOME FAILED' : '\nALL PASS');
 process.exitCode = fail ? 1 : 0;

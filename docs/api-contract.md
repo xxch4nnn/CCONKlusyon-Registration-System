@@ -31,7 +31,7 @@ Request: `{ "action": "checkin", "attendance_code": "12345", "device_id": "Entra
 |---|---|---|
 | `SUCCESS` | First valid scan; row written `Checked-In` | `data`: `attendance_code, full_name, club_name, designation, ticket_type, table_allocation, photo_url, checkin_timestamp, attendee_type, token, special_table` |
 | `DUPLICATE` | Already checked in; nothing written | `data`: `full_name, initial_checkin_timestamp, table_allocation, checked_in_by, attendee_type, token, special_table` |
-| `NOT_FOUND` | Code not in `Master_Attendance` | — |
+| `NOT_FOUND` | Code not in `Master_Attendance` | — ; or, for a voided pass (`VOID-<code>` in the sheet): `voided: true`, `message`, `data`: `attendance_code, full_name, club_name, designation` |
 | `ERROR` | Bad JSON, missing code, unknown action, or lock timeout (`System busy, retry shortly.`) | `message` |
 
 The sheet write is wrapped in `LockService.getScriptLock()` (10 s wait), so concurrent scans of
@@ -65,7 +65,7 @@ Response: `{ "status": "SUCCESS", "count": n, "attendees": [ { full_name, club_n
 Read-only full attendee list for the scanner's offline cache. **Excludes `email`.** Rows without
 a name or attendance code are skipped.
 
-Response: `{ "status": "SUCCESS", "count": n, "attendees": [ { attendance_code, full_name, club_name, designation, ticket_type, table_allocation, checkin_status, attendee_type, token, special_table } ] }`
+Response: `{ "status": "SUCCESS", "count": n, "attendees": [ { attendance_code, full_name, club_name, designation, ticket_type, table_allocation, checkin_status, attendee_type, token, special_table } ], "voided": [ { attendance_code, full_name, club_name, designation } ] }`
 (`checkin_status` is `"Pending"` when the sheet cell is blank. `token` is blank when the column is missing or says `none`; `special_table` is a boolean.)
 
 ## `GET ?action=ping` (also accepted via POST)

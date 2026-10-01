@@ -770,6 +770,10 @@
     const cache = readRosterCache();
     return (cache && cache.byCode && cache.byCode[code]) || null;
   }
+  function lookupVoided(code) {
+    const cache = readRosterCache();
+    return (cache && cache.voided && cache.voided[code]) || null;
+  }
   // Day-of integrity (2026-10-01): once THIS phone has checked someone in (confirmed, or queued offline), mark them in
   // the cached roster at once. Otherwise a second scan of the same pass during an outage would show a clean
   // "OFFLINE — QUEUED" card (and hand over a second token) until the next roster refresh.
@@ -810,7 +814,10 @@
       });
       // Scans still waiting in this phone's queue aren't on the server yet — keep them marked as checked in.
       readQueue().forEach(function (it) { const a = byCode[String(it.attendance_code)]; if (a) a.checkin_status = 'Checked-In'; });
-      localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify({ byCode: byCode, syncedAt: new Date().toISOString() }));
+      // Voided passes (withdrawals, 2026-10-01): kept apart from byCode so name search never offers them.
+      const voided = {};
+      (Array.isArray(r.json.voided) ? r.json.voided : []).forEach(function (a) { if (a && a.attendance_code) voided[String(a.attendance_code)] = a; });
+      localStorage.setItem(CONFIG.ROSTER_CACHE_KEY, JSON.stringify({ byCode: byCode, voided: voided, syncedAt: new Date().toISOString() }));
       updateRosterBadge();
       return 'ok';
     }
@@ -1067,6 +1074,16 @@
         codeLine +
         '<p class="sub">' + escapeHtml_(message || 'No connection and this code isn’t in the cached roster, so this attendee can’t be identified right now — including whether they’re VIP. Check the printed roster before letting them through.') + '</p>' +
         '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
+    } else if (status === 'VOIDED') {
+      html =
+        '<div class="card error"><div class="tier-bar" style="background:var(--red)">Voided pass</div><div class="body">' +
+        MARK_WARN.replace('#D97706', '#DC2626') +
+        '<p class="msg" style="color:#F87171;">VOIDED — WITHDRAWN</p>' +
+        (data.full_name ? '<p class="name">' + escapeHtml_(data.full_name) + '</p>' : '') +
+        codeLine +
+        (data.club_name ? '<p class="sub">' + escapeHtml_(data.club_name) + '</p>' : '') +
+        '<p class="sub">Do not admit on this pass. This registration was withdrawn — send the guest to the registration desk.</p>' +
+        '</div><button class="close" onclick="cco_closeModal()">Next scan</button></div>';
     } else if (status === 'KEY') {
       html =
         '<div class="card error"><div class="body">' +
@@ -1178,6 +1195,12 @@
   // No confirmed answer from the server: keep the scan (offline queue) and identify the attendee from
   // the cached roster so the usher can still spot a VIP. reason: 'offline' (no connection) | 'server'.
   function handleUnconfirmed(code, payload, reason) {
+    const gone = lookupVoided(code);
+    if (gone) { // voided pass: refuse even offline, and queue nothing — there is no check-in to record
+      flashScreen('red'); reactReticle('err'); feedback('error');
+      showResultModal('VOIDED', Object.assign({}, gone, { _code: code }), null);
+      return;
+    }
     queueOffline(payload);
     const cached = lookupRoster(code);
     if (cached) {
@@ -1230,7 +1253,8 @@
       flashScreen('red');
       reactReticle('err');
       feedback('error');
-      showResultModal('NOT_FOUND', { _code: code }, json.message);
+      if (json.voided) showResultModal('VOIDED', Object.assign({}, json.data || {}, { _code: code }), json.message);
+      else showResultModal('NOT_FOUND', { _code: code }, json.message);
     }
   }
 

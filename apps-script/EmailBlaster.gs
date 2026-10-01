@@ -205,6 +205,11 @@ function sendMailBlast_(rows, opts) {
       skipped++;
       return;
     }
+    if (trackDispatch && /^\s*VOID/i.test(String(row.attendance_code || ''))) {
+      Logger.log('SKIP (voided pass — withdrawn): ' + row.full_name);
+      skipped++;
+      return;
+    }
     const missing = requiredFields.filter(function (f) { return !row[f]; });
     if (missing.length) {
       Logger.log('SKIP (missing ' + missing.join(', ') + '): ' + row.full_name);
@@ -722,6 +727,7 @@ function previewEventPassesLIVE() {
   });
   const willSend = [], alreadySent = [], noEmail = [];
   rows.forEach(function (r) {
+    if (/^\s*VOID/i.test(String(r.attendance_code || ''))) return; // withdrawn: never emailed
     if (isAlreadyDispatched_(r, 'pass_sent', 'pass_sent_timestamp')) alreadySent.push(r);
     else if (!String(r.email || '').trim()) noEmail.push(r);
     else willSend.push(r);

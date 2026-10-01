@@ -204,4 +204,13 @@ S('S5',()=>{ reset4(); rows=mkS(); rows[1][18]='none'; rows[1][8]='Externals';
   post({action:'checkin',attendance_code:'41004',device_id:'D'});
   ok('S5 VIP with a token also tells the token team to bring it', /Token team: bring the GOLD LEI to the Entrance/.test(tgSent[1].text), tgSent[1]&&tgSent[1].text); });
 
+S('S6',()=>{ reset4(); rows=mkS(); rows[1][6]='VOID-41001';
+  const a=post({action:'checkin',attendance_code:'41001',device_id:'D'});
+  ok('S6 a VOID- code answers NOT_FOUND with voided:true and the name', a.status==='NOT_FOUND'&&a.voided===true&&a.data.full_name==='Plain Person'&&/VOIDED/.test(a.message), JSON.stringify(a));
+  ok('S6 nothing written, no alert', rows[1][10]===''&&tgSent.length===0);
+  const r=get({action:'roster'});
+  ok('S6 roster lists it under voided, not attendees', !r.attendees.some(x=>/41001/.test(x.attendance_code))&&r.voided.length===1&&r.voided[0].attendance_code==='41001', JSON.stringify(r.voided));
+  ok('S6 an unknown code is a plain NOT_FOUND', !post({action:'checkin',attendance_code:'49999',device_id:'D'}).voided);
+  ok('S6 voidedCode_ accepts VOID-12345 / void 12345 / VOID_12345 only', ctx.voidedCode_('VOID-12345')==='12345'&&ctx.voidedCode_('void 12345')==='12345'&&ctx.voidedCode_('VOID_12345')==='12345'&&ctx.voidedCode_('12345')===''&&ctx.voidedCode_('VOID-1234')===''); });
+
 console.log(fail?('\n'+fail+' FAILED'):'\nALL PASS'); process.exit(fail?1:0);

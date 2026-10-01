@@ -16,7 +16,7 @@ instead of generating it at send-time. Code targets the real sheet.
 | D | `club_name` | |
 | E | `designation` | |
 | F | `ticket_type` | `"VIP Pass"` \| `"Regular Attendee"` |
-| G | `attendance_code` | Primary key, 5-digit. Filled by `generateCredentials()` (idempotent, collision-checked). |
+| G | `attendance_code` | Primary key, 5-digit. Filled by `generateCredentials()` (idempotent, collision-checked). **`VOID-12345` = voided pass** (withdrawal, 2026-10-01): refused at the door as VOIDED, skipped by the live send, number never reissued. |
 | H | `qr_code_url` | Filled alongside G, via `api.qrserver.com`. Since 2026-09-30 the invitation email no longer reads it — it embeds a sharper QR built from G at send time (see `CHANGES.md`). |
 | I | `table_allocation` | |
 | J | `photo_url` | **Nullable by design for Regular Attendees** — VIPs use curated portraits; regular attendees fall back to name cards / monogram avatars (`CONFIG.SHOWCASE_MODE` in `display.html`, Epic 5). |

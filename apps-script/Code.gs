@@ -39,7 +39,7 @@
 
 // Bump on every change you deploy. `ping` reports it, and the scanner shows a warning if the deployed script is older
 // (editing this file in the Apps Script editor changes nothing for the phones until the DEPLOYMENT is moved to a new version).
-const BACKEND_VERSION = '2026-10-01.1';
+const BACKEND_VERSION = '2026-10-01.2';
 
 const SHEET_NAME = 'Master_Attendance';
 const COL = {
@@ -98,6 +98,8 @@ function generateCredentials() {
   for (let r = 1; r < data.length; r++) {
     const c = data[r][COL.ATTENDANCE_CODE - 1];
     if (c) usedCodes.add(String(c));
+    const v = voidedCode_(c);
+    if (v) usedCodes.add(v); // a voided pass's number is never handed to someone else
   }
 
   for (let r = 1; r < data.length; r++) {
@@ -249,6 +251,15 @@ function headerIndex_(headerRow) {
   (headerRow || []).forEach(function (h, i) { const k = String(h).trim(); if (k && idx[k] === undefined) idx[k] = i; });
   return idx;
 }
+// ---- Voided passes (withdrawals) — 2026-10-01 ------------------------------------------------------------------------
+// To void a pass, put VOID- in front of its code in Master_Attendance (12345 -> VOID-12345). The row stays as the
+// record; scanning the old QR answers NOT_FOUND with voided:true, so the scanner shows "VOIDED — WITHDRAWN" (older
+// scanners just show CODE NOT FOUND — still refused). The number is never reissued, and the live send skips the row.
+function voidedCode_(cell) {
+  const m = /^\s*VOID[\s\-_:]*(\d{5})\s*$/i.exec(String(cell == null ? '' : cell));
+  return m ? m[1] : '';
+}
+
 /** "none", "-", "n/a", "no" typed in a token cell = deliberately no token (no banner, no alert). */
 function isNoToken_(v) { return /^\s*(none|no|n\/?a|-+|—|–|0)\s*$/i.test(String(v == null ? '' : v)); }
 /** attendee_type, token and special_table for one row (blank when the columns don't exist). */
@@ -308,6 +319,15 @@ function processCheckin_(code, deviceId) {
     };
   }
 
+  for (let r = 1; r < data.length; r++) {
+    const row = data[r];
+    if (voidedCode_(row[COL.ATTENDANCE_CODE - 1]) !== code) continue;
+    return {
+      status: 'NOT_FOUND', voided: true,
+      message: 'This pass was VOIDED (withdrawn). Do not admit on this pass — send the guest to the registration desk.',
+      data: { attendance_code: code, full_name: row[COL.FULL_NAME - 1], club_name: row[COL.CLUB_NAME - 1], designation: row[COL.DESIGNATION - 1] }
+    };
+  }
   return { status: 'NOT_FOUND', message: 'Attendance code does not exist in master records.' };
 }
 
@@ -347,10 +367,13 @@ function handleRoster_() {
   const hdr = headerIndex_(data[0]);
   const tables = specialTables_();
   const attendees = [];
+  const voided = []; // separate list, so the wall / print page (which read `attendees`) never count them
 
   for (let r = 1; r < data.length; r++) {
     const row = data[r];
     if (!row[COL.FULL_NAME - 1] || !row[COL.ATTENDANCE_CODE - 1]) continue; // skip empty/uncredentialed rows
+    const v = voidedCode_(row[COL.ATTENDANCE_CODE - 1]);
+    if (v) { voided.push({ attendance_code: v, full_name: row[COL.FULL_NAME - 1], club_name: row[COL.CLUB_NAME - 1], designation: row[COL.DESIGNATION - 1] }); continue; }
     const h = honors_(row, hdr, tables);
     attendees.push({
       attendance_code: String(row[COL.ATTENDANCE_CODE - 1]),
@@ -364,7 +387,7 @@ function handleRoster_() {
     });
   }
 
-  return jsonOut_({ status: 'SUCCESS', count: attendees.length, attendees: attendees });
+  return jsonOut_({ status: 'SUCCESS', count: attendees.length, attendees: attendees, voided: voided });
 }
 
 /** Endpoint 3: bulk offline-queue flush from the scanner PWA. */
