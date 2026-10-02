@@ -5,6 +5,13 @@ a decision trail so "why is it like this" never needs re-asking.
 
 ---
 
+## 2026-10-02 — Scanner name search is surname-first
+**By:** Claude (user: "update last name search function").
+**Now:** the scanner works out each person's surname from any roster format ("Kim P. Ravida", "CIRUJANO, Jan Marie S.", "Dr. … Faunillan", "Hermoso Tupas Jr.", "Dela Torre", quoted nicknames, "VILLAPA. Hydee"). Surname matches rank first ("rav" → the Ravidas before "Ravi Santos"), then surname + first name ("ravida kim"), then first names, then matches inside a word. Results sort by surname, then given name. Compound surnames work with or without the space ("delatorre"). The surname is underlined in gold in each row and on the confirm box; placeholder reads "Type a last name (surname)". Names with no surname in the list (e.g. a single name) still match by that name.
+**Verified:** checked the parser against every Full Name in Final Seating; N2 now expects surname order; new N13; full suite green.
+
+---
+
 ## 2026-10-01 — Voided passes (withdrawals) + withdrawal procedure
 **By:** Claude (user: an org withdrew a guest by letter on Sept 21, nobody recorded it, the guest still got a pass and the replacement didn't).
 **Mechanism:** void a pass by putting `VOID-` in front of its code in Master_Attendance (`12345` → `VOID-12345`); keep the row as the record. Code.gs (BACKEND_VERSION `2026-10-01.2`): scanning the old QR answers `NOT_FOUND` with `voided: true` + the name, writes nothing, sends no alert; the roster lists it under a separate `voided` array (wall/print counts unaffected); `generateCredentials` never reissues a voided number. EmailBlaster: live send and preview skip VOID rows. Scanner: red **VOIDED — WITHDRAWN** card ("do not admit, send to the registration desk"), also offline from the cached roster, never queued; voided passes are not in name search. Older scanners still refuse it (CODE NOT FOUND).

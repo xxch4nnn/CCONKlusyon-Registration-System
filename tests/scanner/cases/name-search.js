@@ -32,7 +32,7 @@
     type('c');
     check('N2 one letter asks for more', rows().length === 0 && /keep typing/i.test(listText()), listText());
     type('CRU');
-    check('N2 "CRU" finds the three Cruz-es, sorted by name', names().join('|') === 'Ana Cruz|Cy Diaz-Cruz|Juan D. Dela Cruz', names().join('|'));
+    check('N2 "CRU" finds the three Cruz-es, sorted by surname (Cruz, Dela Cruz, Diaz-Cruz)', names().join('|') === 'Ana Cruz|Juan D. Dela Cruz|Cy Diaz-Cruz', names().join('|'));
     type('zzz');
     check('N2 no match says so', rows().length === 0 && /no match/i.test(listText()), listText());
     type('');
@@ -141,5 +141,30 @@
     $('modeToggle').click(); type('reyes');
     $('manualCode').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
     check('N12 Enter with exactly one match opens its confirmation', !!confirmBox() && /Ben Reyes/.test(confirmBox().textContent), 'type=' + $('manualCode').type + ' value=' + $('manualCode').value + ' rows=' + rows().length + ' results=' + $('nameResults').textContent.slice(0, 60));
+  });
+  test('N13 surname search: last names rank first, every name format, sorted by surname', async () => {
+    seed([P(11111, 'Kim P. Ravida'), P(22222, 'Ravi Santos'), P(33333, 'CIRUJANO, Jan Marie S.'), P(44444, 'Dr. Maria Luisa Faunillan'),
+      P(55555, 'Hermoso Tupas Jr.'), P(66666, 'Rizalino Dela Torre'), P(77777, 'Ana Torres'), P(88888, 'Sir Juan "Wacky" Racho'), P(99999, 'Ravida, Ben')]);
+    openName();
+    type('rav');
+    check('N13 "rav": both Ravidas (surname) before Ravi Santos (first name), Ben before Kim', names().join('|') === 'Ravida, Ben|Kim P. Ravida|Ravi Santos', names().join('|'));
+    type('cirujano');
+    check('N13 "Surname, Given" format', names().join('|') === 'CIRUJANO, Jan Marie S.', names().join('|'));
+    type('faun');
+    check('N13 titles are skipped (Dr.)', names().join('|') === 'Dr. Maria Luisa Faunillan');
+    type('tupas');
+    check('N13 suffixes are skipped (Jr.)', names().join('|') === 'Hermoso Tupas Jr.');
+    type('delatorre');
+    check('N13 compound surname typed without the space', names().join('|') === 'Rizalino Dela Torre', names().join('|'));
+    type('torre');
+    check('N13 "torre": Dela Torre and Torres both surnames, sorted by surname', names().join('|') === 'Rizalino Dela Torre|Ana Torres', names().join('|'));
+    type('racho');
+    check('N13 nicknames in quotes are ignored', names().join('|') === 'Sir Juan "Wacky" Racho');
+    type('ravida kim');
+    check('N13 surname + first name narrows to one', names().join('|') === 'Kim P. Ravida', names().join('|'));
+    type('rav');
+    const sn = rows()[1].querySelector('.sn');
+    check('N13 the surname is marked in the row', !!sn && sn.textContent === 'Ravida', sn && sn.textContent);
+    check('N13 placeholder asks for a last name', /last name/i.test($('manualCode').placeholder), $('manualCode').placeholder);
   });
 })();

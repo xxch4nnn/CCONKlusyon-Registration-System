@@ -171,6 +171,7 @@
   .nr .n, .nc .n { font-weight: 700; font-size: 16px; overflow-wrap: anywhere; font-family: var(--display); color: var(--gold-hi); letter-spacing: .02em; }
   .nr .s, .nc .s { font-size: 12px; color: var(--muted); }
   .nr .s { grid-column: 1; }
+  .nr .sn, .nc .sn { text-transform: uppercase; letter-spacing: .03em; color: var(--ink); text-decoration: underline; text-decoration-color: var(--gold); text-underline-offset: 3px; }
   .tag { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 700; background: #374151; color: #E5E7EB; white-space: nowrap; }
   .tag.vip { background: var(--gold); color: var(--navy); }
   .tag.tok { background: var(--gold-hi); color: var(--navy); }
@@ -1288,7 +1289,7 @@
     nameMode = !!on;
     manualCode.type = nameMode ? 'text' : 'tel';
     manualCode.inputMode = nameMode ? 'text' : 'numeric';
-    if (nameMode) { manualCode.removeAttribute('maxlength'); manualCode.removeAttribute('pattern'); manualCode.placeholder = 'Type a surname or name'; }
+    if (nameMode) { manualCode.removeAttribute('maxlength'); manualCode.removeAttribute('pattern'); manualCode.placeholder = 'Type a last name (surname)'; }
     else { manualCode.setAttribute('maxlength', '5'); manualCode.setAttribute('pattern', '[0-9]*'); manualCode.placeholder = '5-digit code'; }
     manualCode.classList.toggle('name-mode', nameMode);
     $('manualSubmit').hidden = nameMode;
@@ -1300,23 +1301,72 @@
   modeToggle.addEventListener('click', function () { setNameMode(!nameMode); });
 
   // Returns null when this phone has no roster yet, otherwise the matching attendees (best first).
+  // ---- Surname search (2026-10-02) ----------------------------------------------------------------------------------
+  // Ushers usually ask for the LAST name. The roster mixes "Kim P. Ravida", "CIRUJANO, Jan Marie S.", "Dr. Maria Luisa
+  // Faunillan", "Hermoso Tupas Jr." and "Juan Dela Cruz", so the surname is worked out per name: the part before a comma,
+  // else the last word (plus dela/de/del/delos/san/sta… before it), ignoring titles, suffixes and "nicknames".
+  const NAME_TITLES = /^(dr|engr|sir|ma'?am|mx|mr|mrs|ms|atty|prof|hon|rev|fr|sr\.?)\.?$/i;
+  const NAME_SUFFIX = /^(jr|sr|ii|iii|iv)\.?,?$/i;
+  const NAME_PARTICLES = { de: 1, dela: 1, del: 1, delos: 1, los: 1, la: 1, san: 1, sta: 1, santa: 1, van: 1, von: 1, di: 1, da: 1, dos: 1 };
+  function splitName(full) {
+    let s = String(full == null ? '' : full).replace(/"[^"]*"|\u201C[^\u201D]*\u201D/g, ' ').replace(/\s+/g, ' ').trim();
+    if (!s || /^\(?tba\)?$/i.test(s)) return { surname: '', given: s };
+    s = s.replace(/^([A-Z\u00D1]{3,})\. /, '$1, '); // "VILLAPA. Hydee C." — comma typed as a period
+    const comma = s.match(/^([^,]+),\s*(.+)$/);
+    if (comma && !NAME_SUFFIX.test(comma[2].trim())) return { surname: comma[1].trim(), given: comma[2].trim() };
+    const w = s.replace(/,/g, ' ').split(' ').filter(Boolean);
+    while (w.length > 1 && NAME_TITLES.test(w[0])) w.shift();
+    const suffix = [];
+    while (w.length > 1 && NAME_SUFFIX.test(w[w.length - 1])) suffix.unshift(w.pop());
+    if (w.length === 1) return { surname: '', given: w.concat(suffix).join(' ') }; // a lone name: no surname given
+    if (w.length === 2 && /^[A-Za-z\u00D1\u00F1]{1,2}\.$/.test(w[1])) return { surname: '', given: w.concat(suffix).join(' ') }; // "Noenni D."
+    const last = [w.pop()];
+    while (w.length > 1 && NAME_PARTICLES[fold(w[w.length - 1]).replace(/\.$/, '')]) last.unshift(w.pop());
+    return { surname: last.join(' '), given: w.concat(suffix).join(' ') };
+  }
   function searchRoster(query) {
     const cache = readRosterCache();
     if (!cache || !cache.byCode) return null;
     const tokens = fold(query).split(/[^a-z0-9]+/).filter(function (t) { return t.length >= 2; });
     if (!tokens.length) return [];
+    const joined = tokens.join('');
     const out = [];
     Object.keys(cache.byCode).forEach(function (code) {
       const a = cache.byCode[code];
       const name = fold(a.full_name);
       const compact = name.replace(/[^a-z0-9]+/g, '');
-      if (!tokens.every(function (t) { return compact.indexOf(t) >= 0; })) return;
+      if (!tokens.every(function (t) { return compact.indexOf(t) >= 0; }) && compact.indexOf(joined) < 0) return;
+      const parts = splitName(a.full_name);
+      const sur = fold(parts.surname);
+      const surCompact = sur.replace(/[^a-z0-9]+/g, '');
+      const surWords = sur.split(/[^a-z0-9]+/).filter(Boolean);
       const words = name.split(/[^a-z0-9]+/);
-      const wordStart = tokens.every(function (t) { return words.some(function (w) { return w.indexOf(t) === 0; }); });
-      out.push({ a: a, rank: wordStart ? 0 : 1 });
+      let rank;
+      if (surCompact && (surCompact.indexOf(joined) === 0 ||                                   // "rav", "dela cruz", "delacruz"
+          tokens.every(function (t) { return surWords.some(function (w) { return w.indexOf(t) === 0; }); }))) rank = 0;
+      else if (surCompact && tokens.some(function (t) { return surWords.some(function (w) { return w.indexOf(t) === 0; }); }) &&
+          tokens.every(function (t) { return words.some(function (w) { return w.indexOf(t) === 0; }); })) rank = 1; // "ravida kim"
+      else if (tokens.every(function (t) { return words.some(function (w) { return w.indexOf(t) === 0; }); })) rank = 2; // first names
+      else rank = 3;                                                                             // inside a word ("Barcruz")
+      out.push({ a: a, rank: rank, sur: sur || fold(parts.given), given: fold(parts.given) });
     });
-    out.sort(function (x, y) { return x.rank - y.rank || String(x.a.full_name).localeCompare(String(y.a.full_name)); });
+    out.sort(function (x, y) {
+      return x.rank - y.rank || x.sur.localeCompare(y.sur) || x.given.localeCompare(y.given) ||
+        String(x.a.full_name).localeCompare(String(y.a.full_name));
+    });
     return out.map(function (x) { return x.a; });
+  }
+  // The name as printed, with the surname picked out so the usher can match "Ravida?" at a glance.
+  function nameEl(tag, a) {
+    const el = nEl(tag, 'n');
+    const full = String(a.full_name || '');
+    const sur = splitName(full).surname;
+    const at = sur ? full.lastIndexOf(sur) : -1;
+    if (at < 0) { el.textContent = full; return el; }
+    if (at > 0) el.appendChild(document.createTextNode(full.slice(0, at)));
+    el.appendChild(nEl('span', 'sn', full.slice(at, at + sur.length)));
+    if (at + sur.length < full.length) el.appendChild(document.createTextNode(full.slice(at + sur.length)));
+    return el;
   }
   function nEl(tag, cls, text) { const n = document.createElement(tag); if (cls) n.className = cls; if (text != null) n.textContent = text; return n; }
   function tagsFor(a) {
@@ -1338,7 +1388,7 @@
     if (!list.length) { showNameMessage('No match. Try another spelling, or use the printed roster.'); return; }
     list.slice(0, NAME_MAX_ROWS).forEach(function (a) {
       const b = nEl('button', 'nr'); b.type = 'button';
-      b.appendChild(nEl('span', 'n', a.full_name || ''));
+      b.appendChild(nameEl('span', a));
       const tags = nEl('span'); tagsFor(a).forEach(function (t) { tags.appendChild(t); }); b.appendChild(tags);
       b.appendChild(nEl('span', 's', [a.designation, a.club_name].filter(Boolean).join(' · ')));
       b.addEventListener('click', function () { showNameConfirm(a); });
@@ -1350,7 +1400,7 @@
   function showNameConfirm(a) {
     nameResults.textContent = '';
     const box = nEl('div', 'nc'); box.id = 'nameConfirm';
-    box.appendChild(nEl('div', 'n', a.full_name || ''));
+    box.appendChild(nameEl('div', a));
     box.appendChild(nEl('div', 's', [a.designation, a.club_name].filter(Boolean).join(' · ')));
     if (seatOf(a.table_allocation)) box.appendChild(nEl('div', 's', 'Table/Seat: ' + seatOf(a.table_allocation)));
     const tags = nEl('div'); tagsFor(a).forEach(function (t) { tags.appendChild(t); }); box.appendChild(tags);
